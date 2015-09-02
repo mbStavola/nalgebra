@@ -2,24 +2,30 @@
 
 #![allow(missing_docs)]
 
-use std::num::{Zero, One, Num};
-use std::rand::{Rand, Rng};
+use std::ops::{Add, Sub, Mul, Neg};
+
+use rand::{Rand, Rng};
+use num::One;
 use structs::mat::{Mat3, Mat4, Mat5};
-use traits::structure::{Cast, Dim, Col, BaseFloat};
-use traits::operations::{Inv, ApproxEq, Absolute};
+use traits::structure::{Cast, Dim, Col, BaseFloat, BaseNum};
+use traits::operations::{Inv, ApproxEq};
 use traits::geometry::{RotationMatrix, Rotation, Rotate, AbsoluteRotate, Transform, Transformation,
                        Translate, Translation, ToHomogeneous};
 
 use structs::vec::{Vec1, Vec2, Vec3, Vec4};
-use structs::pnt::{Pnt2, Pnt3, Pnt4, Pnt2MulRhs, Pnt3MulRhs, Pnt4MulRhs};
+use structs::pnt::{Pnt2, Pnt3, Pnt4};
 use structs::rot::{Rot2, Rot3, Rot4};
+
+#[cfg(feature="arbitrary")]
+use quickcheck::{Arbitrary, Gen};
 
 
 /// Two dimensional isometry.
 ///
 /// This is the composition of a rotation followed by a translation.
 /// Isometries conserve angles and distances, hence do not allow shearing nor scaling.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub struct Iso2<N> {
     /// The rotation applicable by this isometry.
     pub rotation:    Rot2<N>,
@@ -31,7 +37,8 @@ pub struct Iso2<N> {
 ///
 /// This is the composition of a rotation followed by a translation.
 /// Isometries conserve angles and distances, hence do not allow shearing nor scaling.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub struct Iso3<N> {
     /// The rotation applicable by this isometry.
     pub rotation:    Rot3<N>,
@@ -42,7 +49,8 @@ pub struct Iso3<N> {
 /// Four dimensional isometry.
 ///
 /// Isometries conserve angles and distances, hence do not allow shearing nor scaling.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub struct Iso4<N> {
     /// The rotation applicable by this isometry.
     pub rotation:    Rot4<N>,
@@ -93,65 +101,63 @@ impl<N> Iso4<N> {
     }
 }
 
-iso_impl!(Iso2, Rot2, Vec2, Vec1)
-double_dispatch_binop_decl_trait!(Iso2, Iso2MulRhs)
-mul_redispatch_impl!(Iso2, Iso2MulRhs)
-rotation_matrix_impl!(Iso2, Rot2, Vec2, Vec1)
-rotation_impl!(Iso2, Rot2, Vec1)
-dim_impl!(Iso2, 2)
-one_impl!(Iso2)
-absolute_rotate_impl!(Iso2, Vec2)
-rand_impl!(Iso2)
-approx_eq_impl!(Iso2)
-to_homogeneous_impl!(Iso2, Mat3)
-inv_impl!(Iso2)
-transform_impl!(Iso2TransformRhs, Iso2, Vec2, Pnt2)
-transformation_impl!(Iso2)
-rotate_impl!(Iso2, Vec2)
-translation_impl!(Iso2, Vec2)
-translate_impl!(Iso2, Pnt2)
-iso_mul_iso_impl!(Iso2, Iso2MulRhs)
-iso_mul_pnt_impl!(Iso2, Pnt2, Iso2MulRhs)
-pnt_mul_iso_impl!(Iso2, Pnt2, Pnt2MulRhs)
+iso_impl!(Iso2, Rot2, Vec2, Vec1);
+rotation_matrix_impl!(Iso2, Rot2, Vec2, Vec1);
+rotation_impl!(Iso2, Rot2, Vec1);
+dim_impl!(Iso2, 2);
+one_impl!(Iso2);
+absolute_rotate_impl!(Iso2, Vec2);
+rand_impl!(Iso2);
+approx_eq_impl!(Iso2);
+to_homogeneous_impl!(Iso2, Mat3);
+inv_impl!(Iso2);
+transform_impl!(Iso2, Pnt2);
+transformation_impl!(Iso2);
+rotate_impl!(Iso2, Vec2);
+translation_impl!(Iso2, Vec2);
+translate_impl!(Iso2, Pnt2);
+iso_mul_iso_impl!(Iso2);
+iso_mul_pnt_impl!(Iso2, Pnt2);
+pnt_mul_iso_impl!(Iso2, Pnt2);
+arbitrary_iso_impl!(Iso2);
 
-iso_impl!(Iso3, Rot3, Vec3, Vec3)
-double_dispatch_binop_decl_trait!(Iso3, Iso3MulRhs)
-mul_redispatch_impl!(Iso3, Iso3MulRhs)
-rotation_matrix_impl!(Iso3, Rot3, Vec3, Vec3)
-rotation_impl!(Iso3, Rot3, Vec3)
-dim_impl!(Iso3, 3)
-one_impl!(Iso3)
-absolute_rotate_impl!(Iso3, Vec3)
-rand_impl!(Iso3)
-approx_eq_impl!(Iso3)
-to_homogeneous_impl!(Iso3, Mat4)
-inv_impl!(Iso3)
-transform_impl!(Iso3TransformRhs, Iso3, Vec3, Pnt3)
-transformation_impl!(Iso3)
-rotate_impl!(Iso3, Vec3)
-translation_impl!(Iso3, Vec3)
-translate_impl!(Iso3, Pnt3)
-iso_mul_iso_impl!(Iso3, Iso3MulRhs)
-iso_mul_pnt_impl!(Iso3, Pnt3, Iso3MulRhs)
-pnt_mul_iso_impl!(Iso3, Pnt3, Pnt3MulRhs)
+iso_impl!(Iso3, Rot3, Vec3, Vec3);
+rotation_matrix_impl!(Iso3, Rot3, Vec3, Vec3);
+rotation_impl!(Iso3, Rot3, Vec3);
+dim_impl!(Iso3, 3);
+one_impl!(Iso3);
+absolute_rotate_impl!(Iso3, Vec3);
+rand_impl!(Iso3);
+approx_eq_impl!(Iso3);
+to_homogeneous_impl!(Iso3, Mat4);
+inv_impl!(Iso3);
+transform_impl!(Iso3, Pnt3);
+transformation_impl!(Iso3);
+rotate_impl!(Iso3, Vec3);
+translation_impl!(Iso3, Vec3);
+translate_impl!(Iso3, Pnt3);
+iso_mul_iso_impl!(Iso3);
+iso_mul_pnt_impl!(Iso3, Pnt3);
+pnt_mul_iso_impl!(Iso3, Pnt3);
+arbitrary_iso_impl!(Iso3);
 
-// iso_impl!(Iso4, Rot4, Vec4, Vec4)
-double_dispatch_binop_decl_trait!(Iso4, Iso4MulRhs)
-mul_redispatch_impl!(Iso4, Iso4MulRhs)
-// rotation_matrix_impl!(Iso4, Rot4, Vec4, Vec4)
-// rotation_impl!(Iso4, Rot4, Vec4)
-dim_impl!(Iso4, 4)
-one_impl!(Iso4)
-absolute_rotate_impl!(Iso4, Vec4)
-// rand_impl!(Iso4)
-approx_eq_impl!(Iso4)
-to_homogeneous_impl!(Iso4, Mat5)
-inv_impl!(Iso4)
-transform_impl!(Iso4TransformRhs, Iso4, Vec4, Pnt4)
-transformation_impl!(Iso4)
-rotate_impl!(Iso4, Vec4)
-translation_impl!(Iso4, Vec4)
-translate_impl!(Iso4, Pnt4)
-iso_mul_iso_impl!(Iso4, Iso4MulRhs)
-iso_mul_pnt_impl!(Iso4, Pnt4, Iso4MulRhs)
-pnt_mul_iso_impl!(Iso4, Pnt4, Pnt4MulRhs)
+// iso_impl!(Iso4, Rot4, Vec4, Vec4);
+// rotation_matrix_impl!(Iso4, Rot4, Vec4, Vec4);
+// rotation_impl!(Iso4, Rot4, Vec4);
+dim_impl!(Iso4, 4);
+one_impl!(Iso4);
+absolute_rotate_impl!(Iso4, Vec4);
+// rand_impl!(Iso4);
+approx_eq_impl!(Iso4);
+to_homogeneous_impl!(Iso4, Mat5);
+inv_impl!(Iso4);
+transform_impl!(Iso4, Pnt4);
+transformation_impl!(Iso4);
+rotate_impl!(Iso4, Vec4);
+translation_impl!(Iso4, Vec4);
+translate_impl!(Iso4, Pnt4);
+iso_mul_iso_impl!(Iso4);
+iso_mul_pnt_impl!(Iso4, Pnt4);
+pnt_mul_iso_impl!(Iso4, Pnt4);
+// FIXME: as soon as Rot4<N>: Arbitrary
+// arbitrary_iso_impl!(Iso4);

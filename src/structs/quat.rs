@@ -3,19 +3,24 @@
 #![allow(missing_docs)] // we allow missing to avoid having to document the dispatch trait.
 
 use std::mem;
-use std::num::{Zero, One, Bounded, Num};
-use std::num;
-use std::rand::{Rand, Rng};
-use std::slice::{Items, MutItems};
-use structs::{Vec3, Pnt3, Rot3, Mat3, Vec3MulRhs, Pnt3MulRhs};
-use traits::operations::{ApproxEq, Inv, POrd, POrdering, NotComparable, PartialLess,
-                         PartialGreater, PartialEqual, Axpy, ScalarAdd, ScalarSub, ScalarMul,
-                         ScalarDiv};
-use traits::structure::{Cast, Indexable, Iterable, IterableMut, Dim, Shape, BaseFloat};
-use traits::geometry::{Norm, Cross, Rotation, Rotate, Transform};
+use std::slice::{Iter, IterMut};
+use std::ops::{Add, Sub, Mul, Div, Neg, Index, IndexMut};
+use std::iter::{FromIterator, IntoIterator};
+use rand::{Rand, Rng};
+use num::{Zero, One};
+use structs::{Vec3, Pnt3, Rot3, Mat3};
+use traits::operations::{ApproxEq, Inv, POrd, POrdering, Axpy};
+use traits::structure::{Cast, Indexable, Iterable, IterableMut, Dim, Shape, BaseFloat, BaseNum,
+                        Bounded, Repeat};
+use traits::geometry::{Norm, Rotation, Rotate, RotationTo, Transform};
+
+#[cfg(feature="arbitrary")]
+use quickcheck::{Arbitrary, Gen};
+
 
 /// A quaternion.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Hash, Rand, Zero, Show)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Hash, Debug, Copy)]
 pub struct Quat<N> {
     /// The scalar component of the quaternion.
     pub w: N,
@@ -55,22 +60,28 @@ impl<N> Quat<N> {
     }
 }
 
-impl<N: Neg<N>> Quat<N> {
+impl<N: Neg<Output = N> + Copy> Quat<N> {
+    /// Compute the conjugate of this quaternion.
+    #[inline]
+    pub fn conjugate(&self) -> Quat<N> {
+        Quat { w: self.w, i: -self.i, j: -self.j, k: -self.k }
+    }
+
     /// Replaces this quaternion by its conjugate.
     #[inline]
-    pub fn conjugate(&mut self) {
+    pub fn conjugate_mut(&mut self) {
         self.i = -self.i;
         self.j = -self.j;
         self.k = -self.k;
     }
 }
 
-impl<N: BaseFloat + ApproxEq<N> + Clone> Inv for Quat<N> {
+impl<N: BaseFloat + ApproxEq<N>> Inv for Quat<N> {
     #[inline]
-    fn inv_cpy(m: &Quat<N>) -> Option<Quat<N>> {
-        let mut res = m.clone();
+    fn inv(&self) -> Option<Quat<N>> {
+        let mut res = *self;
 
-        if res.inv() {
+        if res.inv_mut() {
             Some(res)
         }
         else {
@@ -79,14 +90,14 @@ impl<N: BaseFloat + ApproxEq<N> + Clone> Inv for Quat<N> {
     }
 
     #[inline]
-    fn inv(&mut self) -> bool {
+    fn inv_mut(&mut self) -> bool {
         let sqnorm = Norm::sqnorm(self);
 
-        if ApproxEq::approx_eq(&sqnorm, &Zero::zero()) {
+        if ApproxEq::approx_eq(&sqnorm, &::zero()) {
             false
         }
         else {
-            self.conjugate();
+            self.conjugate_mut();
             self.w = self.w / sqnorm;
             self.i = self.i / sqnorm;
             self.j = self.j / sqnorm;
@@ -99,18 +110,18 @@ impl<N: BaseFloat + ApproxEq<N> + Clone> Inv for Quat<N> {
 
 impl<N: BaseFloat> Norm<N> for Quat<N> {
     #[inline]
-    fn sqnorm(q: &Quat<N>) -> N {
-        q.w * q.w + q.i * q.i + q.j * q.j + q.k * q.k
+    fn sqnorm(&self) -> N {
+        self.w * self.w + self.i * self.i + self.j * self.j + self.k * self.k
     }
 
     #[inline]
-    fn normalize_cpy(v: &Quat<N>) -> Quat<N> {
-        let n = Norm::norm(v);
-        Quat::new(v.w / n, v.i / n, v.j / n, v.k / n)
+    fn normalize(&self) -> Quat<N> {
+        let n = self.norm();
+        Quat::new(self.w / n, self.i / n, self.j / n, self.k / n)
     }
 
     #[inline]
-    fn normalize(&mut self) -> N {
+    fn normalize_mut(&mut self) -> N {
         let n = Norm::norm(self);
 
         self.w = self.w / n;
@@ -122,26 +133,33 @@ impl<N: BaseFloat> Norm<N> for Quat<N> {
     }
 }
 
-impl<N: Mul<N, N> + Sub<N, N> + Add<N, N>> QuatMulRhs<N, Quat<N>> for Quat<N> {
+impl<N> Mul<Quat<N>> for Quat<N>
+    where N: Copy + Mul<N, Output = N> + Sub<N, Output = N> + Add<N, Output = N> {
+    type Output = Quat<N>;
+
     #[inline]
-    fn binop(left: &Quat<N>, right: &Quat<N>) -> Quat<N> {
+    fn mul(self, right: Quat<N>) -> Quat<N> {
         Quat::new(
-            left.w * right.w - left.i * right.i - left.j * right.j - left.k * right.k,
-            left.w * right.i + left.i * right.w + left.j * right.k - left.k * right.j,
-            left.w * right.j - left.i * right.k + left.j * right.w + left.k * right.i,
-            left.w * right.k + left.i * right.j - left.j * right.i + left.k * right.w)
+            self.w * right.w - self.i * right.i - self.j * right.j - self.k * right.k,
+            self.w * right.i + self.i * right.w + self.j * right.k - self.k * right.j,
+            self.w * right.j - self.i * right.k + self.j * right.w + self.k * right.i,
+            self.w * right.k + self.i * right.j - self.j * right.i + self.k * right.w)
     }
 }
 
-impl<N: ApproxEq<N> + BaseFloat + Clone> QuatDivRhs<N, Quat<N>> for Quat<N> {
+impl<N: ApproxEq<N> + BaseFloat> Div<Quat<N>> for Quat<N> {
+    type Output = Quat<N>;
+
     #[inline]
-    fn binop(left: &Quat<N>, right: &Quat<N>) -> Quat<N> {
-        *left * Inv::inv_cpy(right).expect("Unable to invert the denominator.")
+    fn div(self, right: Quat<N>) -> Quat<N> {
+        self * right.inv().expect("Unable to invert the denominator.")
     }
 }
+
 
 /// A unit quaternion that can represent a 3D rotation.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Hash, Show)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Hash, Debug, Copy)]
 pub struct UnitQuat<N> {
     q: Quat<N>
 }
@@ -152,12 +170,12 @@ impl<N: BaseFloat> UnitQuat<N> {
     pub fn new(axisangle: Vec3<N>) -> UnitQuat<N> {
         let sqang = Norm::sqnorm(&axisangle);
 
-        if sqang.is_zero() {
-            One::one()
+        if ::is_zero(&sqang) {
+            ::one()
         }
         else {
             let ang    = sqang.sqrt();
-            let (s, c) = (ang / num::cast(2.0f64).unwrap()).sin_cos();
+            let (s, c) = (ang / Cast::from(2.0)).sin_cos();
 
             let s_ang = s / ang;
 
@@ -178,12 +196,7 @@ impl<N: BaseFloat> UnitQuat<N> {
     /// The input quaternion will be normalized.
     #[inline]
     pub fn new_with_quat(q: Quat<N>) -> UnitQuat<N> {
-        let mut q = q;
-        let _ = q.normalize();
-
-        UnitQuat {
-            q: q
-        }
+        UnitQuat { q: q.normalize() }
     }
 
     /// Creates a new unit quaternion from Euler angles.
@@ -191,7 +204,7 @@ impl<N: BaseFloat> UnitQuat<N> {
     /// The primitive rotations are applied in order: 1 roll − 2 pitch − 3 yaw.
     #[inline]
     pub fn new_with_euler_angles(roll: N, pitch: N, yaw: N) -> UnitQuat<N> {
-        let _0_5: N  = num::cast(0.5f64).unwrap();
+        let _0_5: N  = Cast::from(0.5);
         let (sr, cr) = (roll * _0_5).sin_cos();
         let (sp, cp) = (pitch * _0_5).sin_cos();
         let (sy, cy) = (yaw * _0_5).sin_cos();
@@ -209,7 +222,7 @@ impl<N: BaseFloat> UnitQuat<N> {
 
     /// Builds a rotation matrix from this quaternion.
     pub fn to_rot(&self) -> Rot3<N> {
-        let _2: N = num::cast(2.0f64).unwrap();
+        let _2: N = Cast::from(2.0);
         let ww = self.q.w * self.q.w;
         let ii = self.q.i * self.q.i;
         let jj = self.q.j * self.q.j;
@@ -233,6 +246,9 @@ impl<N: BaseFloat> UnitQuat<N> {
     }
 }
 
+rand_impl!(Quat, w, i, j, k);
+
+
 impl<N> UnitQuat<N> {
     /// Creates a new unit quaternion from a quaternion.
     ///
@@ -251,33 +267,33 @@ impl<N> UnitQuat<N> {
     }
 }
 
-impl<N: Num + Clone> One for UnitQuat<N> {
+impl<N: BaseNum> One for UnitQuat<N> {
     #[inline]
     fn one() -> UnitQuat<N> {
         unsafe {
-            UnitQuat::new_with_unit_quat(Quat::new(One::one(), Zero::zero(), Zero::zero(), Zero::zero()))
+            UnitQuat::new_with_unit_quat(Quat::new(::one(), ::zero(), ::zero(), ::zero()))
         }
     }
 }
 
-impl<N: Clone + Neg<N>> Inv for UnitQuat<N> {
+impl<N: Copy + Neg<Output = N>> Inv for UnitQuat<N> {
     #[inline]
-    fn inv_cpy(m: &UnitQuat<N>) -> Option<UnitQuat<N>> {
-        let mut cpy = m.clone();
+    fn inv(&self) -> Option<UnitQuat<N>> {
+        let mut cpy = *self;
 
-        cpy.inv();
+        cpy.inv_mut();
         Some(cpy)
     }
 
     #[inline]
-    fn inv(&mut self) -> bool {
-        self.q.conjugate();
+    fn inv_mut(&mut self) -> bool {
+        self.q.conjugate_mut();
 
         true
     }
 }
 
-impl<N: Clone + Rand + BaseFloat> Rand for UnitQuat<N> {
+impl<N: Rand + BaseFloat> Rand for UnitQuat<N> {
     #[inline]
     fn rand<R: Rng>(rng: &mut R) -> UnitQuat<N> {
         UnitQuat::new(rng.gen())
@@ -291,78 +307,94 @@ impl<N: ApproxEq<N>> ApproxEq<N> for UnitQuat<N> {
     }
 
     #[inline]
-    fn approx_eq(a: &UnitQuat<N>, b: &UnitQuat<N>) -> bool {
-        ApproxEq::approx_eq(&a.q, &b.q)
+    fn approx_ulps(_: Option<UnitQuat<N>>) -> u32 {
+        ApproxEq::approx_ulps(None::<N>)
     }
 
     #[inline]
-    fn approx_eq_eps(a: &UnitQuat<N>, b: &UnitQuat<N>, eps: &N) -> bool {
-        ApproxEq::approx_eq_eps(&a.q, &b.q, eps)
+    fn approx_eq_eps(&self, other: &UnitQuat<N>, eps: &N) -> bool {
+        ApproxEq::approx_eq_eps(&self.q, &other.q, eps)
+    }
+
+    #[inline]
+    fn approx_eq_ulps(&self, other: &UnitQuat<N>, ulps: u32) -> bool {
+        ApproxEq::approx_eq_ulps(&self.q, &other.q, ulps)
     }
 }
 
-impl<N: BaseFloat + ApproxEq<N> + Clone> Div<UnitQuat<N>, UnitQuat<N>> for UnitQuat<N> {
+impl<N: BaseFloat + ApproxEq<N>> Div<UnitQuat<N>> for UnitQuat<N> {
+    type Output = UnitQuat<N>;
+
     #[inline]
-    fn div(&self, other: &UnitQuat<N>) -> UnitQuat<N> {
+    fn div(self, other: UnitQuat<N>) -> UnitQuat<N> {
         UnitQuat { q: self.q / other.q }
     }
 }
 
-impl<N: Num + Clone> UnitQuatMulRhs<N, UnitQuat<N>> for UnitQuat<N> {
+impl<N: BaseNum> Mul<UnitQuat<N>> for UnitQuat<N> {
+    type Output = UnitQuat<N>;
+
     #[inline]
-    fn binop(left: &UnitQuat<N>, right: &UnitQuat<N>) -> UnitQuat<N> {
-        UnitQuat { q: left.q * right.q }
+    fn mul(self, right: UnitQuat<N>) -> UnitQuat<N> {
+        UnitQuat { q: self.q * right.q }
     }
 }
 
-impl<N: Num + Clone> UnitQuatMulRhs<N, Vec3<N>> for Vec3<N> {
+impl<N: BaseNum> Mul<Vec3<N>> for UnitQuat<N> {
+    type Output = Vec3<N>;
+
     #[inline]
-    fn binop(left: &UnitQuat<N>, right: &Vec3<N>) -> Vec3<N> {
-        let _2: N = num::one::<N>() + num::one();
-        let mut t = Cross::cross(left.q.vector(), right);
+    fn mul(self, right: Vec3<N>) -> Vec3<N> {
+        let _2: N = ::one::<N>() + ::one();
+        let mut t = ::cross(self.q.vector(), &right);
         t.x = t.x * _2;
         t.y = t.y * _2;
         t.z = t.z * _2;
 
-        Vec3::new(t.x * left.q.w, t.y * left.q.w, t.z * left.q.w) +
-        Cross::cross(left.q.vector(), &t) +
-        *right
+        Vec3::new(t.x * self.q.w, t.y * self.q.w, t.z * self.q.w) + ::cross(self.q.vector(), &t) + right
     }
 }
 
-impl<N: Num + Clone> UnitQuatMulRhs<N, Pnt3<N>> for Pnt3<N> {
+impl<N: BaseNum> Mul<Pnt3<N>> for UnitQuat<N> {
+    type Output = Pnt3<N>;
+
     #[inline]
-    fn binop(left: &UnitQuat<N>, right: &Pnt3<N>) -> Pnt3<N> {
-        ::orig::<Pnt3<N>>() + *left * *right.as_vec()
+    fn mul(self, right: Pnt3<N>) -> Pnt3<N> {
+        ::orig::<Pnt3<N>>() + self * *right.as_vec()
     }
 }
 
-impl<N: Num + Clone> Vec3MulRhs<N, Vec3<N>> for UnitQuat<N> {
+impl<N: BaseNum + Neg<Output = N>> Mul<UnitQuat<N>> for Vec3<N> {
+    type Output = Vec3<N>;
+
     #[inline]
-    fn binop(left: &Vec3<N>, right: &UnitQuat<N>) -> Vec3<N> {
-        let mut inv_quat = right.clone();
-        inv_quat.inv();
+    fn mul(self, right: UnitQuat<N>) -> Vec3<N> {
+        let mut inv_quat = right;
 
-        inv_quat * *left
+        inv_quat.inv_mut();
+
+        inv_quat * self
     }
 }
 
-impl<N: Num + Clone> Pnt3MulRhs<N, Pnt3<N>> for UnitQuat<N> {
+impl<N: BaseNum + Neg<Output = N>> Mul<UnitQuat<N>> for Pnt3<N> {
+    type Output = Pnt3<N>;
+
     #[inline]
-    fn binop(left: &Pnt3<N>, right: &UnitQuat<N>) -> Pnt3<N> {
-        ::orig::<Pnt3<N>>() + *left.as_vec() * *right
+    fn mul(self, right: UnitQuat<N>) -> Pnt3<N> {
+        ::orig::<Pnt3<N>>() + *self.as_vec() * right
     }
 }
 
-impl<N: BaseFloat + Clone> Rotation<Vec3<N>> for UnitQuat<N> {
+impl<N: BaseFloat> Rotation<Vec3<N>> for UnitQuat<N> {
     #[inline]
     fn rotation(&self) -> Vec3<N> {
-        let _2 = num::one::<N>() + num::one();
-        let mut v = self.q.vector().clone();
-        let ang = _2 * v.normalize().atan2(self.q.w);
+        let _2 = ::one::<N>() + ::one();
+        let mut v = *self.q.vector();
+        let ang = _2 * v.normalize_mut().atan2(self.q.w);
 
-        if ang.is_zero() {
-            num::zero()
+        if ::is_zero(&ang) {
+            ::zero()
         }
         else {
             Vec3::new(v.x * ang, v.y * ang, v.z * ang)
@@ -375,23 +407,23 @@ impl<N: BaseFloat + Clone> Rotation<Vec3<N>> for UnitQuat<N> {
     }
 
     #[inline]
-    fn append_rotation(&mut self, amount: &Vec3<N>) {
-        *self = Rotation::append_rotation_cpy(self, amount)
+    fn append_rotation_mut(&mut self, amount: &Vec3<N>) {
+        *self = Rotation::append_rotation(self, amount)
     }
 
     #[inline]
-    fn append_rotation_cpy(t: &UnitQuat<N>, amount: &Vec3<N>) -> UnitQuat<N> {
-        *t * UnitQuat::new(amount.clone())
+    fn append_rotation(&self, amount: &Vec3<N>) -> UnitQuat<N> {
+        *self * UnitQuat::new(*amount)
     }
 
     #[inline]
-    fn prepend_rotation(&mut self, amount: &Vec3<N>) {
-        *self = Rotation::prepend_rotation_cpy(self, amount)
+    fn prepend_rotation_mut(&mut self, amount: &Vec3<N>) {
+        *self = Rotation::prepend_rotation(self, amount)
     }
 
     #[inline]
-    fn prepend_rotation_cpy(t: &UnitQuat<N>, amount: &Vec3<N>) -> UnitQuat<N> {
-        UnitQuat::new(amount.clone()) * *t
+    fn prepend_rotation(&self, amount: &Vec3<N>) -> UnitQuat<N> {
+        UnitQuat::new(*amount) * *self
     }
 
     #[inline]
@@ -400,7 +432,7 @@ impl<N: BaseFloat + Clone> Rotation<Vec3<N>> for UnitQuat<N> {
     }
 }
 
-impl<N: Num + Clone> Rotate<Vec3<N>> for UnitQuat<N> {
+impl<N: BaseNum + Neg<Output = N>> Rotate<Vec3<N>> for UnitQuat<N> {
     #[inline]
     fn rotate(&self, v: &Vec3<N>) -> Vec3<N> {
         *self * *v
@@ -412,7 +444,7 @@ impl<N: Num + Clone> Rotate<Vec3<N>> for UnitQuat<N> {
     }
 }
 
-impl<N: Num + Clone> Rotate<Pnt3<N>> for UnitQuat<N> {
+impl<N: BaseNum + Neg<Output = N>> Rotate<Pnt3<N>> for UnitQuat<N> {
     #[inline]
     fn rotate(&self, p: &Pnt3<N>) -> Pnt3<N> {
         *self * *p
@@ -424,7 +456,25 @@ impl<N: Num + Clone> Rotate<Pnt3<N>> for UnitQuat<N> {
     }
 }
 
-impl<N: Num + Clone> Transform<Vec3<N>> for UnitQuat<N> {
+impl<N: BaseFloat + ApproxEq<N>> RotationTo for UnitQuat<N> {
+    type AngleType = N;
+    type DeltaRotationType = UnitQuat<N>;
+
+    #[inline]
+    fn angle_to(&self, other: &Self) -> N {
+        let delta = self.rotation_to(other);
+        let _2    = ::one::<N>() + ::one();
+
+        _2 * delta.q.vector().norm().atan2(delta.q.w)
+    }
+
+    #[inline]
+    fn rotation_to(&self, other: &Self) -> UnitQuat<N> {
+        *other / *self
+    }
+}
+
+impl<N: BaseNum + Neg<Output = N>> Transform<Vec3<N>> for UnitQuat<N> {
     #[inline]
     fn transform(&self, v: &Vec3<N>) -> Vec3<N> {
         *self * *v
@@ -436,7 +486,7 @@ impl<N: Num + Clone> Transform<Vec3<N>> for UnitQuat<N> {
     }
 }
 
-impl<N: Num + Clone> Transform<Pnt3<N>> for UnitQuat<N> {
+impl<N: BaseNum + Neg<Output = N>> Transform<Pnt3<N>> for UnitQuat<N> {
     #[inline]
     fn transform(&self, p: &Pnt3<N>) -> Pnt3<N> {
         *self * *p
@@ -448,88 +498,38 @@ impl<N: Num + Clone> Transform<Pnt3<N>> for UnitQuat<N> {
     }
 }
 
-double_dispatch_binop_decl_trait!(Quat, QuatMulRhs)
-double_dispatch_binop_decl_trait!(Quat, QuatDivRhs)
-double_dispatch_binop_decl_trait!(Quat, QuatAddRhs)
-double_dispatch_binop_decl_trait!(Quat, QuatSubRhs)
-double_dispatch_cast_decl_trait!(Quat, QuatCast)
-mul_redispatch_impl!(Quat, QuatMulRhs)
-div_redispatch_impl!(Quat, QuatDivRhs)
-add_redispatch_impl!(Quat, QuatAddRhs)
-sub_redispatch_impl!(Quat, QuatSubRhs)
-cast_redispatch_impl!(Quat, QuatCast)
-ord_impl!(Quat, w, i, j, k)
-vec_axis_impl!(Quat, w, i, j, k)
-vec_cast_impl!(Quat, QuatCast, w, i, j, k)
-as_slice_impl!(Quat, 4)
-index_impl!(Quat)
-indexable_impl!(Quat, 4)
-at_fast_impl!(Quat, 4)
-new_repeat_impl!(Quat, val, w, i, j, k)
-dim_impl!(Quat, 3)
-container_impl!(Quat)
-add_impl!(Quat, QuatAddRhs, w, i, j, k)
-sub_impl!(Quat, QuatSubRhs, w, i, j, k)
-neg_impl!(Quat, w, i, j, k)
-scalar_ops_impl!(Quat, w, i, j, k)
-vec_mul_scalar_impl!(Quat, f64, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, f32, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, u64, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, u32, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, u16, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, u8, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, i64, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, i32, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, i16, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, i8, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, uint, QuatMulRhs, w, i, j, k)
-vec_mul_scalar_impl!(Quat, int, QuatMulRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, f64, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, f32, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, u64, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, u32, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, u16, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, u8, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, i64, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, i32, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, i16, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, i8, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, uint, QuatDivRhs, w, i, j, k)
-vec_div_scalar_impl!(Quat, int, QuatDivRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, f64, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, f32, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, u64, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, u32, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, u16, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, u8, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, i64, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, i32, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, i16, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, i8, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, uint, QuatAddRhs, w, i, j, k)
-vec_add_scalar_impl!(Quat, int, QuatAddRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, f64, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, f32, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, u64, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, u32, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, u16, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, u8, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, i64, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, i32, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, i16, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, i8, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, uint, QuatSubRhs, w, i, j, k)
-vec_sub_scalar_impl!(Quat, int, QuatSubRhs, w, i, j, k)
-approx_eq_impl!(Quat, w, i, j, k)
-from_iterator_impl!(Quat, iterator, iterator, iterator, iterator)
-bounded_impl!(Quat, w, i, j, k)
-axpy_impl!(Quat, w, i, j, k)
-iterable_impl!(Quat, 4)
-iterable_mut_impl!(Quat, 4)
+#[cfg(feature="arbitrary")]
+impl<N: Arbitrary + BaseFloat> Arbitrary for UnitQuat<N> {
+    fn arbitrary<G: Gen>(g: &mut G) -> UnitQuat<N> {
+        UnitQuat::new(Arbitrary::arbitrary(g))
+    }
+}
 
-double_dispatch_binop_decl_trait!(UnitQuat, UnitQuatMulRhs)
-mul_redispatch_impl!(UnitQuat, UnitQuatMulRhs)
-dim_impl!(UnitQuat, 3)
-as_slice_impl!(UnitQuat, 4)
-index_impl!(UnitQuat)
-indexable_impl!(UnitQuat, 5)
+
+ord_impl!(Quat, w, i, j, k);
+vec_axis_impl!(Quat, w, i, j, k);
+vec_cast_impl!(Quat, w, i, j, k);
+as_array_impl!(Quat, 4);
+index_impl!(Quat);
+indexable_impl!(Quat, 4);
+at_fast_impl!(Quat, 4);
+repeat_impl!(Quat, val, w, i, j, k);
+dim_impl!(Quat, 3);
+container_impl!(Quat);
+add_impl!(Quat, w, i, j, k);
+sub_impl!(Quat, w, i, j, k);
+scalar_add_impl!(Quat, w, i, j, k);
+scalar_sub_impl!(Quat, w, i, j, k);
+scalar_mul_impl!(Quat, w, i, j, k);
+scalar_div_impl!(Quat, w, i, j, k);
+neg_impl!(Quat, w, i, j, k);
+zero_one_impl!(Quat, w, i, j, k);
+approx_eq_impl!(Quat, w, i, j, k);
+from_iterator_impl!(Quat, iterator, iterator, iterator, iterator);
+bounded_impl!(Quat, w, i, j, k);
+axpy_impl!(Quat, w, i, j, k);
+iterable_impl!(Quat, 4);
+iterable_mut_impl!(Quat, 4);
+arbitrary_impl!(Quat, w, i, j, k);
+
+dim_impl!(UnitQuat, 3);

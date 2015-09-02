@@ -1,137 +1,155 @@
+use std::ops::{Add, Sub, Mul, Div, Neg, Index, IndexMut};
+use std::marker::PhantomData;
 use std::mem;
-use std::num::{Zero, One, Bounded, Num};
-use std::slice::{Items, MutItems};
-use std::iter::{Iterator, FromIterator};
+use std::slice::{Iter, IterMut};
+use std::iter::{FromIterator, IntoIterator};
+use rand::{Rand, Rng};
+use num::{Zero, One};
 use traits::operations::ApproxEq;
-use traits::structure::{Iterable, IterableMut, Indexable, Basis, Dim, Shape, BaseFloat};
+use traits::structure::{Iterable, IterableMut, Indexable, Basis, Dim, Shape, BaseFloat, BaseNum, Bounded};
 use traits::geometry::{Translation, Dot, Norm};
 use structs::vec;
 
-impl<N> Index<uint, N> for vec::Vec0<N> {
+impl<N> Zero for vec::Vec0<N> {
     #[inline]
-    fn index(&self, _: &uint) -> &N {
+    fn zero() -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        true
+    }
+}
+
+impl<N> Index<usize> for vec::Vec0<N> {
+    type Output = N;
+
+    #[inline]
+    fn index(&self, _: usize) -> &N {
         panic!("Canot index a Vec0.")
     }
 }
 
-impl<N> IndexMut<uint, N> for vec::Vec0<N> {
+impl<N> IndexMut<usize> for vec::Vec0<N> {
     #[inline]
-    fn index_mut(&mut self, _: &uint) -> &mut N {
+    fn index_mut(&mut self, _: usize) -> &mut N {
         panic!("Canot index a Vec0.")
     }
 }
 
-impl<N> Shape<uint, N> for vec::Vec0<N> {
+impl<N> Shape<usize> for vec::Vec0<N> {
     #[inline]
-    fn shape(&self) -> uint {
+    fn shape(&self) -> usize {
         0
     }
 }
 
-impl<N> Indexable<uint, N> for vec::Vec0<N> {
+impl<N> Indexable<usize, N> for vec::Vec0<N> {
     #[inline]
-    fn at(&self, _: uint) -> N {
+    fn swap(&mut self, _: usize, _: usize) {
+    }
+
+    #[inline]
+    unsafe fn unsafe_at(&self, _: usize) -> N {
         panic!("Cannot index a Vec0.")
     }
 
     #[inline]
-    fn set(&mut self, _: uint, _: N) {
-    }
-
-    #[inline]
-    fn swap(&mut self, _: uint, _: uint) {
-    }
-
-    #[inline]
-    unsafe fn unsafe_at(&self, _: uint) -> N {
-        panic!("Cannot index a Vec0.")
-    }
-
-    #[inline]
-    unsafe fn unsafe_set(&mut self, _: uint, _: N) {
+    unsafe fn unsafe_set(&mut self, _: usize, _: N) {
     }
 }
 
 impl<N: 'static> Iterable<N> for vec::Vec0<N> {
     #[inline]
-    fn iter<'l>(&'l self) -> Items<'l, N> {
-        unsafe { mem::transmute::<&'l vec::Vec0<N>, &'l [N, ..0]>(self).iter() }
+    fn iter<'l>(&'l self) -> Iter<'l, N> {
+        unsafe { mem::transmute::<&'l vec::Vec0<N>, &'l [N; 0]>(self).iter() }
     }
 }
 
 impl<N: 'static> IterableMut<N> for vec::Vec0<N> {
     #[inline]
-    fn iter_mut<'l>(&'l mut self) -> MutItems<'l, N> {
-        unsafe { mem::transmute::<&'l mut vec::Vec0<N>, &'l mut [N, ..0]>(self).iter_mut() }
+    fn iter_mut<'l>(&'l mut self) -> IterMut<'l, N> {
+        unsafe { mem::transmute::<&'l mut vec::Vec0<N>, &'l mut [N; 0]>(self).iter_mut() }
     }
 }
 
 impl<N> Dim for vec::Vec0<N> {
     #[inline]
-    fn dim(_: Option<vec::Vec0<N>>) -> uint {
+    fn dim(_: Option<vec::Vec0<N>>) -> usize {
         0
     }
 }
 
 impl<N> Basis for vec::Vec0<N> {
     #[inline(always)]
-    fn canonical_basis(_: |vec::Vec0<N>| -> bool) { }
+    fn canonical_basis<F: FnMut(vec::Vec0<N>) -> bool>(_: F) { }
 
     #[inline(always)]
-    fn orthonormal_subspace_basis(_: &vec::Vec0<N>, _: |vec::Vec0<N>| -> bool) { }
+    fn orthonormal_subspace_basis<F: FnMut(vec::Vec0<N>) -> bool>(_: &vec::Vec0<N>, _: F) { }
 
     #[inline(always)]
-    fn canonical_basis_element(_: uint) -> Option<vec::Vec0<N>> {
+    fn canonical_basis_element(_: usize) -> Option<vec::Vec0<N>> {
         None
     }
 }
 
-impl<N, T> Add<T, vec::Vec0<N>> for vec::Vec0<N> {
+impl<N, T> Add<T> for vec::Vec0<N> {
+    type Output = vec::Vec0<N>;
+
     #[inline]
-    fn add(&self, _: &T) -> vec::Vec0<N> {
-        vec::Vec0
+    fn add(self, _: T) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
-impl<N, T> Sub<T, vec::Vec0<N>> for vec::Vec0<N> {
+impl<N, T> Sub<T> for vec::Vec0<N> {
+    type Output = vec::Vec0<N>;
+
     #[inline]
-    fn sub(&self, _: &T) -> vec::Vec0<N> {
-        vec::Vec0
+    fn sub(self, _: T) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
-impl<N: Neg<N>> Neg<vec::Vec0<N>> for vec::Vec0<N> {
+impl<N: Neg<Output = N> + Copy> Neg for vec::Vec0<N> {
+    type Output = vec::Vec0<N>;
+
     #[inline]
-    fn neg(&self) -> vec::Vec0<N> {
-        vec::Vec0
+    fn neg(self) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
-impl<N: Num> Dot<N> for vec::Vec0<N> {
+impl<N: BaseNum> Dot<N> for vec::Vec0<N> {
     #[inline]
-    fn dot(_: &vec::Vec0<N>, _: &vec::Vec0<N>) -> N {
-        Zero::zero()
+    fn dot(&self, _: &vec::Vec0<N>) -> N {
+        ::zero()
     }
 }
 
-impl<N, T> Mul<T, vec::Vec0<N>> for vec::Vec0<N> {
+impl<N, T> Mul<T> for vec::Vec0<N> {
+    type Output = vec::Vec0<N>;
+
     #[inline]
-    fn mul(&self, _: &T) -> vec::Vec0<N> {
-        vec::Vec0
+    fn mul(self, _: T) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
-impl<N, T> Div<T, vec::Vec0<N>> for vec::Vec0<N> {
+impl<N, T> Div<T> for vec::Vec0<N> {
+    type Output = vec::Vec0<N>;
+
     #[inline]
-    fn div(&self, _: &T) -> vec::Vec0<N> {
-        vec::Vec0
+    fn div(self, _: T) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
-impl<N: Clone + Add<N, N> + Neg<N>> Translation<vec::Vec0<N>> for vec::Vec0<N> {
+impl<N: Copy + Add<N, Output = N> + Neg<Output = N>> Translation<vec::Vec0<N>> for vec::Vec0<N> {
     #[inline]
     fn translation(&self) -> vec::Vec0<N> {
-        self.clone()
+        *self
     }
 
     #[inline]
@@ -140,23 +158,23 @@ impl<N: Clone + Add<N, N> + Neg<N>> Translation<vec::Vec0<N>> for vec::Vec0<N> {
     }
 
     #[inline]
-    fn append_translation(&mut self, t: &vec::Vec0<N>) {
+    fn append_translation_mut(&mut self, t: &vec::Vec0<N>) {
         *self = *t + *self;
     }
 
     #[inline]
-    fn append_translation_cpy(vec: &vec::Vec0<N>, t: &vec::Vec0<N>) -> vec::Vec0<N> {
-        *t + vec
+    fn append_translation(&self, t: &vec::Vec0<N>) -> vec::Vec0<N> {
+        *t + self
     }
 
     #[inline]
-    fn prepend_translation(&mut self, t: &vec::Vec0<N>) {
+    fn prepend_translation_mut(&mut self, t: &vec::Vec0<N>) {
         *self = *self + *t;
     }
 
     #[inline]
-    fn prepend_translation_cpy(vec: &vec::Vec0<N>, t: &vec::Vec0<N>) -> vec::Vec0<N> {
-        *vec + *t
+    fn prepend_translation(&self, t: &vec::Vec0<N>) -> vec::Vec0<N> {
+        *self + *t
     }
 
     #[inline]
@@ -166,23 +184,23 @@ impl<N: Clone + Add<N, N> + Neg<N>> Translation<vec::Vec0<N>> for vec::Vec0<N> {
 
 impl<N: BaseFloat> Norm<N> for vec::Vec0<N> {
     #[inline]
-    fn sqnorm(_: &vec::Vec0<N>) -> N {
-        Zero::zero()
+    fn sqnorm(&self) -> N {
+        ::zero()
     }
 
     #[inline]
-    fn norm(_: &vec::Vec0<N>) -> N {
-        Zero::zero()
+    fn norm(&self) -> N {
+        ::zero()
     }
 
     #[inline]
-    fn normalize_cpy(_: &vec::Vec0<N>) -> vec::Vec0<N> {
-        Zero::zero()
+    fn normalize(&self) -> vec::Vec0<N> {
+        ::zero()
     }
 
     #[inline]
-    fn normalize(&mut self) -> N {
-        Zero::zero()
+    fn normalize_mut(&mut self) -> N {
+        ::zero()
     }
 }
 
@@ -192,13 +210,17 @@ impl<N: ApproxEq<N>> ApproxEq<N> for vec::Vec0<N> {
         ApproxEq::approx_epsilon(None::<N>)
     }
 
+    fn approx_ulps(_: Option<vec::Vec0<N>>) -> u32 {
+        ApproxEq::approx_ulps(None::<N>)
+    }
+
     #[inline]
-    fn approx_eq(_: &vec::Vec0<N>, _: &vec::Vec0<N>) -> bool {
+    fn approx_eq_eps(&self, _: &vec::Vec0<N>, _: &N) -> bool {
         true
     }
 
     #[inline]
-    fn approx_eq_eps(_: &vec::Vec0<N>, _: &vec::Vec0<N>, _: &N) -> bool {
+    fn approx_eq_ulps(&self, _: &vec::Vec0<N>, _: u32) -> bool {
         true
     }
 }
@@ -206,25 +228,30 @@ impl<N: ApproxEq<N>> ApproxEq<N> for vec::Vec0<N> {
 impl<N: One> One for vec::Vec0<N> {
     #[inline]
     fn one() -> vec::Vec0<N> {
-        vec::Vec0
+        vec::Vec0(PhantomData)
     }
 }
 
 impl<N> FromIterator<N> for vec::Vec0<N> {
     #[inline]
-    fn from_iter<I: Iterator<N>>(_: I) -> vec::Vec0<N> {
-        vec::Vec0
+    fn from_iter<I: IntoIterator<Item = N>>(_: I) -> vec::Vec0<N> {
+        vec::Vec0(PhantomData)
     }
 }
 
 impl<N: Bounded> Bounded for vec::Vec0<N> {
     #[inline]
     fn max_value() -> vec::Vec0<N> {
-        vec::Vec0
+        vec::Vec0(PhantomData)
     }
 
     #[inline]
     fn min_value() -> vec::Vec0<N> {
-        vec::Vec0
+        vec::Vec0(PhantomData)
     }
+}
+
+impl<N> Rand for vec::Vec0<N> {
+    #[inline]
+    fn rand<R: Rng>(_: &mut R) -> vec::Vec0<N> { vec::Vec0(PhantomData) }
 }

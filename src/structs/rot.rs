@@ -2,30 +2,34 @@
 
 #![allow(missing_docs)]
 
-use std::num::{Zero, One, Num};
-use std::rand::{Rand, Rng};
-use traits::geometry::{Rotate, Rotation, AbsoluteRotate, RotationMatrix, Transform, ToHomogeneous,
-                       Norm, Cross};
-use traits::structure::{Cast, Dim, Row, Col, BaseFloat};
+use std::ops::{Mul, Neg, Index};
+use rand::{Rand, Rng};
+use num::{Zero, One};
+use traits::geometry::{Rotate, Rotation, AbsoluteRotate, RotationMatrix, RotationTo, Transform,
+                       ToHomogeneous, Norm, Cross};
+use traits::structure::{Cast, Dim, Row, Col, BaseFloat, BaseNum, Eye, Diag};
 use traits::operations::{Absolute, Inv, Transpose, ApproxEq};
-use structs::vec::{Vec1, Vec2, Vec3, Vec4, Vec2MulRhs, Vec3MulRhs, Vec4MulRhs};
-use structs::pnt::{Pnt2, Pnt3, Pnt4, Pnt2MulRhs, Pnt3MulRhs, Pnt4MulRhs};
+use structs::vec::{Vec1, Vec2, Vec3, Vec4};
+use structs::pnt::{Pnt2, Pnt3, Pnt4};
 use structs::mat::{Mat2, Mat3, Mat4, Mat5};
+#[cfg(feature="arbitrary")]
+use quickcheck::{Arbitrary, Gen};
 
 
 /// Two dimensional rotation matrix.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show, Hash)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Hash, Copy)]
 pub struct Rot2<N> {
     submat: Mat2<N>
 }
 
-impl<N: Clone + BaseFloat + Neg<N>> Rot2<N> {
+impl<N: Clone + BaseFloat + Neg<Output = N>> Rot2<N> {
     /// Builds a 2 dimensional rotation matrix from an angle in radian.
     pub fn new(angle: Vec1<N>) -> Rot2<N> {
         let (sia, coa) = angle.x.sin_cos();
 
         Rot2 {
-            submat: Mat2::new(coa.clone(), -sia, sia.clone(), coa)
+            submat: Mat2::new(coa.clone(), -sia, sia, coa)
         }
     }
 }
@@ -42,23 +46,23 @@ impl<N: BaseFloat + Clone> Rotation<Vec1<N>> for Rot2<N> {
     }
 
     #[inline]
-    fn append_rotation(&mut self, rot: &Vec1<N>) {
-        *self = Rotation::append_rotation_cpy(self, rot)
+    fn append_rotation_mut(&mut self, rot: &Vec1<N>) {
+        *self = Rotation::append_rotation(self, rot)
     }
 
     #[inline]
-    fn append_rotation_cpy(t: &Rot2<N>, rot: &Vec1<N>) -> Rot2<N> {
-        Rot2::new(rot.clone()) * *t
+    fn append_rotation(&self, rot: &Vec1<N>) -> Rot2<N> {
+        Rot2::new(rot.clone()) * *self
     }
 
     #[inline]
-    fn prepend_rotation(&mut self, rot: &Vec1<N>) {
-        *self = Rotation::prepend_rotation_cpy(self, rot)
+    fn prepend_rotation_mut(&mut self, rot: &Vec1<N>) {
+        *self = Rotation::prepend_rotation(self, rot)
     }
 
     #[inline]
-    fn prepend_rotation_cpy(t: &Rot2<N>, rot: &Vec1<N>) -> Rot2<N> {
-        *t * Rot2::new(rot.clone())
+    fn prepend_rotation(&self, rot: &Vec1<N>) -> Rot2<N> {
+        *self * Rot2::new(rot.clone())
     }
 
     #[inline]
@@ -67,7 +71,22 @@ impl<N: BaseFloat + Clone> Rotation<Vec1<N>> for Rot2<N> {
     }
 }
 
-impl<N: Clone + Rand + BaseFloat + Neg<N>> Rand for Rot2<N> {
+impl<N: BaseFloat> RotationTo for Rot2<N> {
+    type AngleType = N;
+    type DeltaRotationType = Rot2<N>;
+
+    #[inline]
+    fn angle_to(&self, other: &Self) -> N {
+        self.rotation_to(other).rotation().norm()
+    }
+
+    #[inline]
+    fn rotation_to(&self, other: &Self) -> Rot2<N> {
+        *other * ::inv(self).unwrap()
+    }
+}
+
+impl<N: Rand + BaseFloat> Rand for Rot2<N> {
     #[inline]
     fn rand<R: Rng>(rng: &mut R) -> Rot2<N> {
         Rot2::new(rng.gen())
@@ -87,11 +106,20 @@ impl<N: BaseFloat> AbsoluteRotate<Vec2<N>> for Rot2<N> {
     }
 }
 
+#[cfg(feature="arbitrary")]
+impl<N: Arbitrary + Clone + BaseFloat + Neg<Output = N>> Arbitrary for Rot2<N> {
+    fn arbitrary<G: Gen>(g: &mut G) -> Rot2<N> {
+        Rot2::new(Arbitrary::arbitrary(g))
+    }
+}
+
+
 /*
  * 3d rotation
  */
 /// Three dimensional rotation matrix.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show, Hash)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Hash, Copy)]
 pub struct Rot3<N> {
     submat: Mat3<N>
 }
@@ -104,13 +132,13 @@ impl<N: Clone + BaseFloat> Rot3<N> {
     ///   * `axisangle` - A vector representing the rotation. Its magnitude is the amount of rotation
     ///   in radian. Its direction is the axis of rotation.
     pub fn new(axisangle: Vec3<N>) -> Rot3<N> {
-        if Norm::sqnorm(&axisangle).is_zero() {
-            One::one()
+        if ::is_zero(&Norm::sqnorm(&axisangle)) {
+            ::one()
         }
         else {
             let mut axis   = axisangle;
-            let angle      = axis.normalize();
-            let _1: N      = One::one();
+            let angle      = axis.normalize_mut();
+            let _1: N      = ::one();
             let ux         = axis.x.clone();
             let uy         = axis.y.clone();
             let uz         = axis.z.clone();
@@ -177,8 +205,8 @@ impl<N: Clone + BaseFloat> Rot3<N> {
     ///   * up - Vector pointing `up`. The only requirement of this parameter is to not be colinear
     ///   with `at`. Non-colinearity is not checked.
     pub fn look_at(&mut self, at: &Vec3<N>, up: &Vec3<N>) {
-        let xaxis = Norm::normalize_cpy(at);
-        let zaxis = Norm::normalize_cpy(&Cross::cross(up, &xaxis));
+        let xaxis = Norm::normalize(at);
+        let zaxis = Norm::normalize(&Cross::cross(up, &xaxis));
         let yaxis = Cross::cross(&zaxis, &xaxis);
 
         self.submat = Mat3::new(
@@ -194,8 +222,8 @@ impl<N: Clone + BaseFloat> Rot3<N> {
     ///   * up - Vector pointing `up`. The only requirement of this parameter is to not be colinear
     ///   with `at`. Non-colinearity is not checked.
     pub fn look_at_z(&mut self, at: &Vec3<N>, up: &Vec3<N>) {
-        let zaxis = Norm::normalize_cpy(at);
-        let xaxis = Norm::normalize_cpy(&Cross::cross(up, &zaxis));
+        let zaxis = Norm::normalize(at);
+        let xaxis = Norm::normalize(&Cross::cross(up, &zaxis));
         let yaxis = Cross::cross(&zaxis, &xaxis);
 
         self.submat = Mat3::new(
@@ -209,14 +237,14 @@ impl<N: Clone + BaseFloat + Cast<f64>>
 Rotation<Vec3<N>> for Rot3<N> {
     #[inline]
     fn rotation(&self) -> Vec3<N> {
-        let angle = ((self.submat.m11 + self.submat.m22 + self.submat.m33 - One::one()) / Cast::from(2.0)).acos();
+        let angle = ((self.submat.m11 + self.submat.m22 + self.submat.m33 - ::one()) / Cast::from(2.0)).acos();
 
         if angle != angle {
             // FIXME: handle that correctly
-            Zero::zero()
+            ::zero()
         }
-        else if angle.is_zero() {
-            Zero::zero()
+        else if ::is_zero(&angle) {
+            ::zero()
         }
         else {
             let m32_m23 = self.submat.m32 - self.submat.m23;
@@ -225,10 +253,10 @@ Rotation<Vec3<N>> for Rot3<N> {
 
             let denom = (m32_m23 * m32_m23 + m13_m31 * m13_m31 + m21_m12 * m21_m12).sqrt();
 
-            if denom.is_zero() {
+            if ::is_zero(&denom) {
                 // XXX: handle that properly
                 // panic!("Internal error: singularity.")
-                Zero::zero()
+                ::zero()
             }
             else {
                 let a_d = angle / denom;
@@ -245,23 +273,23 @@ Rotation<Vec3<N>> for Rot3<N> {
 
 
     #[inline]
-    fn append_rotation(&mut self, rot: &Vec3<N>) {
-        *self = Rotation::append_rotation_cpy(self, rot)
+    fn append_rotation_mut(&mut self, rot: &Vec3<N>) {
+        *self = Rotation::append_rotation(self, rot)
     }
 
     #[inline]
-    fn append_rotation_cpy(t: &Rot3<N>, axisangle: &Vec3<N>) -> Rot3<N> {
-        Rot3::new(axisangle.clone()) * *t
+    fn append_rotation(&self, axisangle: &Vec3<N>) -> Rot3<N> {
+        Rot3::new(axisangle.clone()) * *self
     }
 
     #[inline]
-    fn prepend_rotation(&mut self, rot: &Vec3<N>) {
-        *self = Rotation::prepend_rotation_cpy(self, rot)
+    fn prepend_rotation_mut(&mut self, rot: &Vec3<N>) {
+        *self = Rotation::prepend_rotation(self, rot)
     }
 
     #[inline]
-    fn prepend_rotation_cpy(t: &Rot3<N>, axisangle: &Vec3<N>) -> Rot3<N> {
-        *t * Rot3::new(axisangle.clone())
+    fn prepend_rotation(&self, axisangle: &Vec3<N>) -> Rot3<N> {
+        *self * Rot3::new(axisangle.clone())
     }
 
     #[inline]
@@ -270,8 +298,23 @@ Rotation<Vec3<N>> for Rot3<N> {
     }
 }
 
-impl<N: Clone + Rand + BaseFloat>
-Rand for Rot3<N> {
+impl<N: BaseFloat> RotationTo for Rot3<N> {
+    type AngleType = N;
+    type DeltaRotationType = Rot3<N>;
+
+    #[inline]
+    fn angle_to(&self, other: &Self) -> N {
+        // FIXME: refactor to avoid the normalization of the rotation axisangle vector.
+        self.rotation_to(other).rotation().norm()
+    }
+
+    #[inline]
+    fn rotation_to(&self, other: &Self) -> Rot3<N> {
+        *other * ::inv(self).unwrap()
+    }
+}
+
+impl<N: Clone + Rand + BaseFloat> Rand for Rot3<N> {
     #[inline]
     fn rand<R: Rng>(rng: &mut R) -> Rot3<N> {
         Rot3::new(rng.gen())
@@ -288,8 +331,17 @@ impl<N: BaseFloat> AbsoluteRotate<Vec3<N>> for Rot3<N> {
     }
 }
 
+#[cfg(feature="arbitrary")]
+impl<N: Arbitrary + Clone + BaseFloat> Arbitrary for Rot3<N> {
+    fn arbitrary<G: Gen>(g: &mut G) -> Rot3<N> {
+        Rot3::new(Arbitrary::arbitrary(g))
+    }
+}
+
+
 /// Four dimensional rotation matrix.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show, Hash)]
+#[repr(C)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Hash, Copy)]
 pub struct Rot4<N> {
     submat: Mat4<N>
 }
@@ -347,22 +399,22 @@ Rotation<Vec4<N>> for Rot4<N> {
     }
 
     #[inline]
-    fn append_rotation(&mut self, _: &Vec4<N>) {
+    fn append_rotation_mut(&mut self, _: &Vec4<N>) {
         panic!("Not yet implemented")
     }
 
     #[inline]
-    fn append_rotation_cpy(_: &Rot4<N>, _: &Vec4<N>) -> Rot4<N> {
+    fn append_rotation(&self, _: &Vec4<N>) -> Rot4<N> {
         panic!("Not yet implemented")
     }
 
     #[inline]
-    fn prepend_rotation(&mut self, _: &Vec4<N>) {
+    fn prepend_rotation_mut(&mut self, _: &Vec4<N>) {
         panic!("Not yet implemented")
     }
 
     #[inline]
-    fn prepend_rotation_cpy(_: &Rot4<N>, _: &Vec4<N>) -> Rot4<N> {
+    fn prepend_rotation(&self, _: &Vec4<N>) -> Rot4<N> {
         panic!("Not yet implemented")
     }
 
@@ -377,68 +429,68 @@ Rotation<Vec4<N>> for Rot4<N> {
  * Common implementations.
  */
 
-double_dispatch_binop_decl_trait!(Rot2, Rot2MulRhs)
-mul_redispatch_impl!(Rot2, Rot2MulRhs)
-submat_impl!(Rot2, Mat2)
-rotate_impl!(Rot2RotateRhs, Rot2, Vec2, Pnt2)
-transform_impl!(Rot2TransformRhs, Rot2, Vec2, Pnt2)
-dim_impl!(Rot2, 2)
-rot_mul_rot_impl!(Rot2, Rot2MulRhs)
-rot_mul_vec_impl!(Rot2, Vec2, Rot2MulRhs)
-vec_mul_rot_impl!(Rot2, Vec2, Vec2MulRhs)
-rot_mul_pnt_impl!(Rot2, Pnt2, Rot2MulRhs)
-pnt_mul_rot_impl!(Rot2, Pnt2, Pnt2MulRhs)
-one_impl!(Rot2)
-rotation_matrix_impl!(Rot2, Vec2, Vec1)
-col_impl!(Rot2, Vec2)
-row_impl!(Rot2, Vec2)
-index_impl!(Rot2)
-absolute_impl!(Rot2, Mat2)
-to_homogeneous_impl!(Rot2, Mat3)
-inv_impl!(Rot2)
-transpose_impl!(Rot2)
-approx_eq_impl!(Rot2)
+submat_impl!(Rot2, Mat2);
+rotate_impl!(Rot2, Vec2, Pnt2);
+transform_impl!(Rot2, Vec2, Pnt2);
+dim_impl!(Rot2, 2);
+rot_mul_rot_impl!(Rot2);
+rot_mul_vec_impl!(Rot2, Vec2);
+vec_mul_rot_impl!(Rot2, Vec2);
+rot_mul_pnt_impl!(Rot2, Pnt2);
+pnt_mul_rot_impl!(Rot2, Pnt2);
+one_impl!(Rot2);
+eye_impl!(Rot2);
+rotation_matrix_impl!(Rot2, Vec2, Vec1);
+col_impl!(Rot2, Vec2);
+row_impl!(Rot2, Vec2);
+index_impl!(Rot2);
+absolute_impl!(Rot2, Mat2);
+to_homogeneous_impl!(Rot2, Mat3);
+inv_impl!(Rot2);
+transpose_impl!(Rot2);
+approx_eq_impl!(Rot2);
+diag_impl!(Rot2, Vec2);
 
-double_dispatch_binop_decl_trait!(Rot3, Rot3MulRhs)
-mul_redispatch_impl!(Rot3, Rot3MulRhs)
-submat_impl!(Rot3, Mat3)
-rotate_impl!(Rot3RotateRhs, Rot3, Vec3, Pnt3)
-transform_impl!(Rot3TransformRhs, Rot3, Vec3, Pnt3)
-dim_impl!(Rot3, 3)
-rot_mul_rot_impl!(Rot3, Rot3MulRhs)
-rot_mul_vec_impl!(Rot3, Vec3, Rot3MulRhs)
-vec_mul_rot_impl!(Rot3, Vec3, Vec3MulRhs)
-rot_mul_pnt_impl!(Rot3, Pnt3, Rot3MulRhs)
-pnt_mul_rot_impl!(Rot3, Pnt3, Pnt3MulRhs)
-one_impl!(Rot3)
-rotation_matrix_impl!(Rot3, Vec3, Vec3)
-col_impl!(Rot3, Vec3)
-row_impl!(Rot3, Vec3)
-index_impl!(Rot3)
-absolute_impl!(Rot3, Mat3)
-to_homogeneous_impl!(Rot3, Mat4)
-inv_impl!(Rot3)
-transpose_impl!(Rot3)
-approx_eq_impl!(Rot3)
+submat_impl!(Rot3, Mat3);
+rotate_impl!(Rot3, Vec3, Pnt3);
+transform_impl!(Rot3, Vec3, Pnt3);
+dim_impl!(Rot3, 3);
+rot_mul_rot_impl!(Rot3);
+rot_mul_vec_impl!(Rot3, Vec3);
+vec_mul_rot_impl!(Rot3, Vec3);
+rot_mul_pnt_impl!(Rot3, Pnt3);
+pnt_mul_rot_impl!(Rot3, Pnt3);
+one_impl!(Rot3);
+eye_impl!(Rot3);
+rotation_matrix_impl!(Rot3, Vec3, Vec3);
+col_impl!(Rot3, Vec3);
+row_impl!(Rot3, Vec3);
+index_impl!(Rot3);
+absolute_impl!(Rot3, Mat3);
+to_homogeneous_impl!(Rot3, Mat4);
+inv_impl!(Rot3);
+transpose_impl!(Rot3);
+approx_eq_impl!(Rot3);
+diag_impl!(Rot3, Vec3);
 
-double_dispatch_binop_decl_trait!(Rot4, Rot4MulRhs)
-mul_redispatch_impl!(Rot4, Rot4MulRhs)
-submat_impl!(Rot4, Mat4)
-rotate_impl!(Rot4RotateRhs, Rot4, Vec4, Pnt4)
-transform_impl!(Rot4TransformRhs, Rot4, Vec4, Pnt4)
-dim_impl!(Rot4, 4)
-rot_mul_rot_impl!(Rot4, Rot4MulRhs)
-rot_mul_vec_impl!(Rot4, Vec4, Rot4MulRhs)
-vec_mul_rot_impl!(Rot4, Vec4, Vec4MulRhs)
-rot_mul_pnt_impl!(Rot4, Pnt4, Rot4MulRhs)
-pnt_mul_rot_impl!(Rot4, Pnt4, Pnt4MulRhs)
-one_impl!(Rot4)
-rotation_matrix_impl!(Rot4, Vec4, Vec4)
-col_impl!(Rot4, Vec4)
-row_impl!(Rot4, Vec4)
-index_impl!(Rot4)
-absolute_impl!(Rot4, Mat4)
-to_homogeneous_impl!(Rot4, Mat5)
-inv_impl!(Rot4)
-transpose_impl!(Rot4)
-approx_eq_impl!(Rot4)
+submat_impl!(Rot4, Mat4);
+rotate_impl!(Rot4, Vec4, Pnt4);
+transform_impl!(Rot4, Vec4, Pnt4);
+dim_impl!(Rot4, 4);
+rot_mul_rot_impl!(Rot4);
+rot_mul_vec_impl!(Rot4, Vec4);
+vec_mul_rot_impl!(Rot4, Vec4);
+rot_mul_pnt_impl!(Rot4, Pnt4);
+pnt_mul_rot_impl!(Rot4, Pnt4);
+one_impl!(Rot4);
+eye_impl!(Rot4);
+rotation_matrix_impl!(Rot4, Vec4, Vec4);
+col_impl!(Rot4, Vec4);
+row_impl!(Rot4, Vec4);
+index_impl!(Rot4);
+absolute_impl!(Rot4, Mat4);
+to_homogeneous_impl!(Rot4, Mat5);
+inv_impl!(Rot4);
+transpose_impl!(Rot4);
+approx_eq_impl!(Rot4);
+diag_impl!(Rot4, Vec4);

@@ -1,12 +1,14 @@
-use std::num::{Zero, One };
-use std::num;
-use traits::structure::BaseFloat;
+use traits::structure::{BaseFloat, Cast};
 use structs::{Pnt3, Vec3, Mat4};
+
+#[cfg(feature="arbitrary")]
+use quickcheck::{Arbitrary, Gen};
+
 
 /// A 3D orthographic projection stored without any matrix.
 ///
 /// Reading or modifying its individual properties is cheap but applying the transformation is costly.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub struct Ortho3<N> {
     width:  N,
     height: N,
@@ -17,7 +19,7 @@ pub struct Ortho3<N> {
 /// A 3D orthographic projection stored as a 4D matrix.
 ///
 /// Reading or modifying its individual properties is costly but applying the transformation is cheap.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub struct OrthoMat3<N> {
     mat: Mat4<N>
 }
@@ -25,9 +27,9 @@ pub struct OrthoMat3<N> {
 impl<N: BaseFloat> Ortho3<N> {
     /// Creates a new 3D orthographic projection.
     pub fn new(width: N, height: N, znear: N, zfar: N) -> Ortho3<N> {
-        assert!(!(zfar - znear).is_zero());
-        assert!(!width.is_zero());
-        assert!(!height.is_zero());
+        assert!(!::is_zero(&(zfar - znear)));
+        assert!(!::is_zero(&width));
+        assert!(!::is_zero(&height));
 
         Ortho3 {
             width:  width,
@@ -45,6 +47,17 @@ impl<N: BaseFloat> Ortho3<N> {
     /// Build a `OrthoMat3` representing this projection.
     pub fn to_persp_mat(&self) -> OrthoMat3<N> {
         OrthoMat3::new(self.width, self.height, self.znear, self.zfar)
+    }
+}
+
+#[cfg(feature="arbitrary")]
+impl<N: Arbitrary + BaseFloat> Arbitrary for Ortho3<N> {
+    fn arbitrary<G: Gen>(g: &mut G) -> Ortho3<N> {
+        let width = reject(g, |x| !::is_zero(x));
+        let height = reject(g, |x| !::is_zero(x));
+        let znear = Arbitrary::arbitrary(g);
+        let zfar = reject(g, |&x: &N| !::is_zero(&(x - znear)));
+        Ortho3::new(width, height, znear, zfar)
     }
 }
 
@@ -115,11 +128,11 @@ impl<N: BaseFloat + Clone> Ortho3<N> {
 impl<N: BaseFloat> OrthoMat3<N> {
     /// Creates a new orthographic projection matrix from the width, heihgt, znear and zfar planes of the view cuboid.
     pub fn new(width: N, height: N, znear: N, zfar: N) -> OrthoMat3<N> {
-        assert!(!(zfar - znear).is_zero());
-        assert!(!width.is_zero());
-        assert!(!height.is_zero());
+        assert!(!::is_zero(&(zfar - znear)));
+        assert!(!::is_zero(&width));
+        assert!(!::is_zero(&height));
 
-        let mat: Mat4<N> = One::one();
+        let mat: Mat4<N> = ::one();
 
         let mut res = OrthoMat3 { mat: mat };
         res.set_width(width);
@@ -148,39 +161,39 @@ impl<N: BaseFloat> OrthoMat3<N> {
     /// The width of the view cuboid.
     #[inline]
     pub fn width(&self) -> N {
-        num::cast::<f64, N>(2.0).unwrap() / self.mat.m11
+        <N as Cast<f64>>::from(2.0) / self.mat.m11
     }
 
     /// The height of the view cuboid.
     #[inline]
     pub fn height(&self) -> N {
-        num::cast::<f64, N>(2.0).unwrap() / self.mat.m22
+        <N as Cast<f64>>::from(2.0) / self.mat.m22
     }
 
     /// The near plane offset of the view cuboid.
     #[inline]
     pub fn znear(&self) -> N {
-        (self.mat.m34 + One::one()) / self.mat.m33
+        (self.mat.m34 + ::one()) / self.mat.m33
     }
 
     /// The far plane offset of the view cuboid.
     #[inline]
     pub fn zfar(&self) -> N {
-        (self.mat.m34 - One::one()) / self.mat.m33
+        (self.mat.m34 - ::one()) / self.mat.m33
     }
 
     /// Sets the width of the view cuboid.
     #[inline]
     pub fn set_width(&mut self, width: N) {
-        assert!(!width.is_zero());
-        self.mat.m11 = num::cast::<f64, N>(2.0).unwrap() / width;
+        assert!(!::is_zero(&width));
+        self.mat.m11 = <N as Cast<f64>>::from(2.0) / width;
     }
 
     /// Sets the height of the view cuboid.
     #[inline]
     pub fn set_height(&mut self, height: N) {
-        assert!(!height.is_zero());
-        self.mat.m22 = num::cast::<f64, N>(2.0).unwrap() / height;
+        assert!(!::is_zero(&height));
+        self.mat.m22 = <N as Cast<f64>>::from(2.0) / height;
     }
 
     /// Sets the near plane offset of the view cuboid.
@@ -200,8 +213,8 @@ impl<N: BaseFloat> OrthoMat3<N> {
     /// Sets the near and far plane offsets of the view cuboid.
     #[inline]
     pub fn set_znear_and_zfar(&mut self, znear: N, zfar: N) {
-        assert!(!(zfar - znear).is_zero());
-        self.mat.m33 = -num::cast::<f64, N>(2.0).unwrap() / (zfar - znear);
+        assert!(!::is_zero(&(zfar - znear)));
+        self.mat.m33 = -<N as Cast<f64>>::from(2.0) / (zfar - znear);
         self.mat.m34 = -(zfar + znear) / (zfar - znear);
     }
 
@@ -232,4 +245,21 @@ impl<N: BaseFloat + Clone> OrthoMat3<N> {
     pub fn to_mat<'a>(&'a self) -> Mat4<N> {
         self.mat.clone()
     }
+}
+
+#[cfg(feature="arbitrary")]
+impl<N: Arbitrary + BaseFloat> Arbitrary for OrthoMat3<N> {
+    fn arbitrary<G: Gen>(g: &mut G) -> OrthoMat3<N> {
+        let x: Ortho3<N> = Arbitrary::arbitrary(g);
+        x.to_persp_mat()
+    }
+}
+
+
+/// Simple helper function for rejection sampling
+#[cfg(feature="arbitrary")]
+#[inline]
+pub fn reject<G: Gen, F: FnMut(&T) -> bool, T: Arbitrary>(g: &mut G, f: F) -> T {
+    use std::iter::repeat;
+    repeat(()).map(|_| Arbitrary::arbitrary(g)).filter(f).next().unwrap()
 }

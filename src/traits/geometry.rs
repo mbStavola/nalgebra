@@ -1,7 +1,7 @@
 //! Traits of operations having a well-known or explicit geometric meaning.
 
-
-use traits::structure::{BaseFloat, Mat};
+use std::ops::{Neg, Mul};
+use traits::structure::{BaseFloat, SquareMat};
 
 /// Trait of object which represent a translation, and to wich new translation
 /// can be appended.
@@ -14,23 +14,23 @@ pub trait Translation<V> {
     fn inv_translation(&self) -> V;
 
     /// Appends a translation to this object.
-    fn append_translation(&mut self, &V);
+    fn append_translation_mut(&mut self, &V);
 
     /// Appends the translation `amount` to a copy of `t`.
-    fn append_translation_cpy(t: &Self, amount: &V) -> Self;
+    fn append_translation(&self, amount: &V) -> Self;
 
     /// Prepends a translation to this object.
-    fn prepend_translation(&mut self, &V);
+    fn prepend_translation_mut(&mut self, &V);
 
     /// Prepends the translation `amount` to a copy of `t`.
-    fn prepend_translation_cpy(t: &Self, amount: &V) -> Self;
+    fn prepend_translation(&self, amount: &V) -> Self;
 
     /// Sets the translation.
     fn set_translation(&mut self, V);
 }
 
-/// Trait of objects able to rotate other objects. This is typically implemented by matrices which
-/// rotate vectors.
+/// Trait of objects able to translate other objects. This is typically
+/// implemented by vectors to translate points.
 pub trait Translate<V> {
     /// Apply a translation to an object.
     fn translate(&self, &V) -> V;
@@ -49,19 +49,35 @@ pub trait Rotation<V> {
     fn inv_rotation(&self) -> V;
 
     /// Appends a rotation to this object.
-    fn append_rotation(&mut self, &V);
+    fn append_rotation_mut(&mut self, &V);
 
     /// Appends the rotation `amount` to a copy of `t`.
-    fn append_rotation_cpy(t: &Self, amount: &V) -> Self;
+    fn append_rotation(&self, amount: &V) -> Self;
 
     /// Prepends a rotation to this object.
-    fn prepend_rotation(&mut self, &V);
+    fn prepend_rotation_mut(&mut self, &V);
 
     /// Prepends the rotation `amount` to a copy of `t`.
-    fn prepend_rotation_cpy(t: &Self, amount: &V) -> Self;
+    fn prepend_rotation(&self, amount: &V) -> Self;
 
     /// Sets the rotation of `self`.
     fn set_rotation(&mut self, V);
+}
+
+/// Trait of object that can be rotated to be superimposed with another one of the same nature.
+pub trait RotationTo {
+    /// Type of the angle between two elements.
+    type AngleType;
+
+    /// Type of the rotation between two elements.
+    type DeltaRotationType;
+
+    /// Computes an angle nedded to transform the first element to the second one using a
+    /// rotation.
+    fn angle_to(&self, other: &Self) -> Self::AngleType;
+
+    /// Computes the smallest rotation needed to transform the first element to the second one.
+    fn rotation_to(&self, other: &Self) -> Self::DeltaRotationType;
 }
 
 /// Trait of objects able to rotate other objects.
@@ -82,7 +98,7 @@ pub trait Rotate<V> {
 ///
 /// Those operations are automatically implemented in term of the `Rotation` and `Translation`
 /// traits.
-pub trait RotationWithTranslation<LV: Neg<LV>, AV>: Rotation<AV> + Translation<LV> {
+pub trait RotationWithTranslation<LV: Neg<Output = LV> + Copy, AV>: Rotation<AV> + Translation<LV> + Sized {
     /// Applies a rotation centered on a specific point.
     ///
     /// # Arguments
@@ -90,11 +106,11 @@ pub trait RotationWithTranslation<LV: Neg<LV>, AV>: Rotation<AV> + Translation<L
     ///   * `amount` - the rotation to apply.
     ///   * `point` - the center of rotation.
     #[inline]
-    fn append_rotation_wrt_point_cpy(t: &Self, amount: &AV, center: &LV) -> Self {
-        let mut res = Translation::append_translation_cpy(t, &-*center);
+    fn append_rotation_wrt_point(&self, amount: &AV, center: &LV) -> Self {
+        let mut res = Translation::append_translation(self, &-*center);
 
-        res.append_rotation(amount);
-        res.append_translation(center);
+        res.append_rotation_mut(amount);
+        res.append_translation_mut(center);
 
         res
     }
@@ -107,10 +123,10 @@ pub trait RotationWithTranslation<LV: Neg<LV>, AV>: Rotation<AV> + Translation<L
     ///   * `amount` - the rotation to be applied
     ///   * `center` - the new center of rotation
     #[inline]
-    fn append_rotation_wrt_point(&mut self, amount: &AV, center: &LV) {
-        self.append_translation(&-*center);
-        self.append_rotation(amount);
-        self.append_translation(center);
+    fn append_rotation_wrt_point_mut(&mut self, amount: &AV, center: &LV) {
+        self.append_translation_mut(&-*center);
+        self.append_rotation_mut(amount);
+        self.append_translation_mut(center);
     }
 
     /// Applies a rotation centered on the translation of `m`.
@@ -119,8 +135,8 @@ pub trait RotationWithTranslation<LV: Neg<LV>, AV>: Rotation<AV> + Translation<L
     ///   * `t` - the object to be rotated.
     ///   * `amount` - the rotation to apply.
     #[inline]
-    fn append_rotation_wrt_center_cpy(t: &Self, amount: &AV) -> Self {
-        RotationWithTranslation::append_rotation_wrt_point_cpy(t, amount, &t.translation())
+    fn append_rotation_wrt_center(&self, amount: &AV) -> Self {
+        RotationWithTranslation::append_rotation_wrt_point(self, amount, &self.translation())
     }
 
     /// Applies a rotation centered on the translation of `m`.
@@ -130,20 +146,23 @@ pub trait RotationWithTranslation<LV: Neg<LV>, AV>: Rotation<AV> + Translation<L
     /// # Arguments
     ///   * `amount` - the rotation to apply.
     #[inline]
-    fn append_rotation_wrt_center(&mut self, amount: &AV) {
+    fn append_rotation_wrt_center_mut(&mut self, amount: &AV) {
         let center = self.translation();
-        self.append_rotation_wrt_point(amount, &center)
+        self.append_rotation_wrt_point_mut(amount, &center)
     }
 }
 
-impl<LV: Neg<LV>, AV, M: Rotation<AV> + Translation<LV>> RotationWithTranslation<LV, AV> for M {
+impl<LV: Neg<Output = LV> + Copy, AV, M: Rotation<AV> + Translation<LV>> RotationWithTranslation<LV, AV> for M {
 }
 
 /// Trait of transformation having a rotation extractable as a rotation matrix. This can typically
 /// be implemented by quaternions to convert them to a rotation matrix.
-pub trait RotationMatrix<N, LV, AV, M: Mat<N, LV, LV> + Rotation<AV>> : Rotation<AV> {
+pub trait RotationMatrix<N, LV: Mul<Self::Output, Output = LV>, AV> : Rotation<AV> {
+    /// The output rotation matrix type.
+    type Output: SquareMat<N, LV> + Rotation<AV>;
+
     /// Gets the rotation matrix represented by `self`.
-    fn to_rot_mat(&self) -> M;
+    fn to_rot_mat(&self) -> Self::Output;
 }
 
 /// Composition of a rotation and an absolute value.
@@ -171,16 +190,16 @@ pub trait Transformation<M> {
     fn inv_transformation(&self) -> M;
 
     /// Appends a transformation to this object.
-    fn append_transformation(&mut self, &M);
+    fn append_transformation_mut(&mut self, &M);
 
     /// Appends the transformation `amount` to a copy of `t`.
-    fn append_transformation_cpy(t: &Self, amount: &M) -> Self;
+    fn append_transformation(&self, amount: &M) -> Self;
 
     /// Prepends a transformation to this object.
-    fn prepend_transformation(&mut self, &M);
+    fn prepend_transformation_mut(&mut self, &M);
 
     /// Prepends the transformation `amount` to a copy of `t`.
-    fn prepend_transformation_cpy(t: &Self, amount: &M) -> Self;
+    fn prepend_transformation(&self, amount: &M) -> Self;
 
     /// Sets the transformation of `self`.
     fn set_transformation(&mut self, M);
@@ -201,35 +220,38 @@ pub trait Transform<V> {
 pub trait Dot<N> {
     /// Computes the dot (inner) product of two vectors.
     #[inline]
-    fn dot(&Self, &Self) -> N;
+    fn dot(&self, other: &Self) -> N;
 }
 
 /// Traits of objects having an euclidian norm.
 pub trait Norm<N: BaseFloat> {
     /// Computes the norm of `self`.
     #[inline]
-    fn norm(v: &Self) -> N {
-        Norm::sqnorm(v).sqrt()
+    fn norm(&self) -> N {
+        self.sqnorm().sqrt()
     }
 
     /// Computes the squared norm of `self`.
     ///
     /// This is usually faster than computing the norm itself.
-    fn sqnorm(&Self) -> N;
+    fn sqnorm(&self) -> N;
 
     /// Gets the normalized version of a copy of `v`.
-    fn normalize_cpy(v: &Self) -> Self;
+    fn normalize(&self) -> Self;
 
     /// Normalizes `self`.
-    fn normalize(&mut self) -> N;
+    fn normalize_mut(&mut self) -> N;
 }
 
 /**
  * Trait of elements having a cross product.
  */
-pub trait Cross<V> {
+pub trait Cross {
+    /// The cross product output.
+    type CrossProductType;
+
     /// Computes the cross product between two elements (usually vectors).
-    fn cross(&Self, other: &Self) -> V;
+    fn cross(&self, other: &Self) -> Self::CrossProductType;
 }
 
 /**
@@ -238,13 +260,13 @@ pub trait Cross<V> {
 pub trait CrossMatrix<M> {
     /// The matrix associated to any cross product with this vector. I.e. `v.cross(anything)` =
     /// `v.cross_matrix().rmul(anything)`.
-    fn cross_matrix(&Self) -> M;
+    fn cross_matrix(&self) -> M;
 }
 
 /// Traits of objects which can be put in homogeneous coordinates form.
 pub trait ToHomogeneous<U> {
     /// Gets the homogeneous coordinates form of this object.
-    fn to_homogeneous(&Self) -> U;
+    fn to_homogeneous(&self) -> U;
 }
 
 /// Traits of objects which can be build from an homogeneous coordinate form.
@@ -260,9 +282,9 @@ pub trait FromHomogeneous<U> {
 ///
 /// The number of sample must be sufficient to approximate a sphere using a support mapping
 /// function.
-pub trait UniformSphereSample {
+pub trait UniformSphereSample : Sized {
     /// Iterate through the samples.
-    fn sample(|Self| -> ());
+    fn sample<F: FnMut(Self)>(F);
 }
 
 /// The zero element of a vector space, seen as an element of its embeding affine space.

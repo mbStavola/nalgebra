@@ -1,64 +1,110 @@
-use std::num::{Zero, One, Num};
+use std::ops::{Sub, Mul, Neg};
+use num::{Zero, One};
 use traits::structure::{Cast, Row, Basis, BaseFloat};
-use traits::geometry::{Norm, Cross, CrossMatrix, UniformSphereSample};
+use traits::geometry::{Norm, Cross, CrossMatrix, RotationTo, UniformSphereSample};
 use structs::vec::{Vec1, Vec2, Vec3, Vec4};
 use structs::mat::Mat3;
+use structs::rot::{Rot2, Rot3};
 
-impl<N: Mul<N, N> + Sub<N, N>> Cross<Vec1<N>> for Vec2<N> {
+impl<N: BaseFloat> RotationTo for Vec2<N> {
+    type AngleType = N;
+    type DeltaRotationType = Rot2<N>;
+
     #[inline]
-    fn cross(a: &Vec2<N>, b: &Vec2<N>) -> Vec1<N> {
-        Vec1::new(a.x * b.y - a.y * b.x)
+    fn angle_to(&self, other: &Self) -> N {
+        ::cross(self, other).x.atan2(::dot(self, other))
+    }
+
+    #[inline]
+    fn rotation_to(&self, other: &Self) -> Rot2<N> {
+        Rot2::new(Vec1::new(self.angle_to(other)))
+    }
+}
+
+impl<N: BaseFloat> RotationTo for Vec3<N> {
+    type AngleType = N;
+    type DeltaRotationType = Rot3<N>;
+
+    #[inline]
+    fn angle_to(&self, other: &Self) -> N {
+        ::cross(self, other).norm().atan2(::dot(self, other))
+    }
+
+    #[inline]
+    fn rotation_to(&self, other: &Self) -> Rot3<N> {
+        let mut axis = ::cross(self, other);
+        let norm = axis.normalize_mut();
+
+        if ::is_zero(&norm) {
+            ::one()
+        }
+        else {
+            let axis_angle = axis * norm.atan2(::dot(self, other));
+
+            Rot3::new(axis_angle)
+        }
+    }
+}
+
+impl<N: Copy + Mul<N, Output = N> + Sub<N, Output = N>> Cross for Vec2<N> {
+    type CrossProductType = Vec1<N>;
+
+    #[inline]
+    fn cross(&self, other: &Vec2<N>) -> Vec1<N> {
+        Vec1::new(self.x * other.y - self.y * other.x)
     }
 }
 
 // FIXME: instead of returning a Vec2, define a Mat2x1 matrix?
-impl<N: Neg<N> + Clone> CrossMatrix<Vec2<N>> for Vec2<N> {
+impl<N: Neg<Output = N> + Copy> CrossMatrix<Vec2<N>> for Vec2<N> {
     #[inline]
-    fn cross_matrix(v: &Vec2<N>) -> Vec2<N> {
-        Vec2::new(-v.y, v.x.clone())
+    fn cross_matrix(&self) -> Vec2<N> {
+        Vec2::new(-self.y, self.x)
     }
 }
 
-impl<N: Mul<N, N> + Sub<N, N>> Cross<Vec3<N>> for Vec3<N> {
+impl<N: Copy + Mul<N, Output = N> + Sub<N, Output = N>> Cross for Vec3<N> {
+    type CrossProductType = Vec3<N>;
+
     #[inline]
-    fn cross(a: &Vec3<N>, b: &Vec3<N>) -> Vec3<N> {
+    fn cross(&self, other: &Vec3<N>) -> Vec3<N> {
         Vec3::new(
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x
         )
     }
 }
 
-impl<N: Neg<N> + Zero + Clone> CrossMatrix<Mat3<N>> for Vec3<N> {
+impl<N: Neg<Output = N> + Zero + Copy> CrossMatrix<Mat3<N>> for Vec3<N> {
     #[inline]
-    fn cross_matrix(v: &Vec3<N>) -> Mat3<N> {
+    fn cross_matrix(&self) -> Mat3<N> {
         Mat3::new(
-            Zero::zero(), -v.z        , v.y.clone(),
-            v.z.clone() , Zero::zero(), -v.x,
-            -v.y        , v.x.clone() , Zero::zero()
+            ::zero(), -self.z,  self.y,
+            self.z,   ::zero(), -self.x,
+            -self.y,  self.x,   ::zero()
         )
     }
 }
 
 // FIXME: implement this for all other vectors
-impl<N: Clone> Row<Vec1<N>> for Vec2<N> {
+impl<N: Copy> Row<Vec1<N>> for Vec2<N> {
     #[inline]
-    fn nrows(&self) -> uint {
+    fn nrows(&self) -> usize {
         2
     }
 
     #[inline]
-    fn row(&self, i: uint) -> Vec1<N> {
+    fn row(&self, i: usize) -> Vec1<N> {
         match i {
-            0 => Vec1::new(self.x.clone()),
-            1 => Vec1::new(self.y.clone()),
+            0 => Vec1::new(self.x),
+            1 => Vec1::new(self.y),
             _ => panic!(format!("Index out of range: 2d vectors do not have {} rows. ", i))
         }
     }
 
     #[inline]
-    fn set_row(&mut self, i: uint, r: Vec1<N>) {
+    fn set_row(&mut self, i: usize, r: Vec1<N>) {
         match i {
             0 => self.x = r.x,
             1 => self.y = r.x,
@@ -70,17 +116,17 @@ impl<N: Clone> Row<Vec1<N>> for Vec2<N> {
 
 impl<N: One> Basis for Vec1<N> {
     #[inline(always)]
-    fn canonical_basis(f: |Vec1<N>| -> bool) {
-        f(Vec1::new(One::one()));
+    fn canonical_basis<F: FnMut(Vec1<N>) -> bool>(mut f: F) {
+        f(Vec1::new(::one()));
     }
 
     #[inline(always)]
-    fn orthonormal_subspace_basis(_: &Vec1<N>, _: |Vec1<N>| -> bool) { }
+    fn orthonormal_subspace_basis<F: FnMut(Vec1<N>) -> bool>(_: &Vec1<N>, _: F) { }
 
     #[inline]
-    fn canonical_basis_element(i: uint) -> Option<Vec1<N>> {
+    fn canonical_basis_element(i: usize) -> Option<Vec1<N>> {
         if i == 0 {
-            Some(Vec1::new(One::one()))
+            Some(Vec1::new(::one()))
         }
         else {
             None
@@ -88,25 +134,25 @@ impl<N: One> Basis for Vec1<N> {
     }
 }
 
-impl<N: Clone + One + Zero + Neg<N>> Basis for Vec2<N> {
+impl<N: Copy + One + Zero + Neg<Output = N>> Basis for Vec2<N> {
     #[inline(always)]
-    fn canonical_basis(f: |Vec2<N>| -> bool) {
-        if !f(Vec2::new(One::one(), Zero::zero())) { return };
-        f(Vec2::new(Zero::zero(), One::one()));
+    fn canonical_basis<F: FnMut(Vec2<N>) -> bool>(mut f: F) {
+        if !f(Vec2::new(::one(), ::zero())) { return };
+        f(Vec2::new(::zero(), ::one()));
     }
 
     #[inline]
-    fn orthonormal_subspace_basis(n: &Vec2<N>, f: |Vec2<N>| -> bool) {
-        f(Vec2::new(-n.y, n.x.clone()));
+    fn orthonormal_subspace_basis<F: FnMut(Vec2<N>) -> bool>(n: &Vec2<N>, mut f: F) {
+        f(Vec2::new(-n.y, n.x));
     }
 
     #[inline]
-    fn canonical_basis_element(i: uint) -> Option<Vec2<N>> {
+    fn canonical_basis_element(i: usize) -> Option<Vec2<N>> {
         if i == 0 {
-            Some(Vec2::new(One::one(), Zero::zero()))
+            Some(Vec2::new(::one(), ::zero()))
         }
         else if i == 1 {
-            Some(Vec2::new(Zero::zero(), One::one()))
+            Some(Vec2::new(::zero(), ::one()))
         }
         else {
             None
@@ -116,20 +162,20 @@ impl<N: Clone + One + Zero + Neg<N>> Basis for Vec2<N> {
 
 impl<N: BaseFloat> Basis for Vec3<N> {
     #[inline(always)]
-    fn canonical_basis(f: |Vec3<N>| -> bool) {
-        if !f(Vec3::new(One::one(), Zero::zero(), Zero::zero())) { return };
-        if !f(Vec3::new(Zero::zero(), One::one(), Zero::zero())) { return };
-        f(Vec3::new(Zero::zero(), Zero::zero(), One::one()));
+    fn canonical_basis<F: FnMut(Vec3<N>) -> bool>(mut f: F) {
+        if !f(Vec3::new(::one(), ::zero(), ::zero())) { return };
+        if !f(Vec3::new(::zero(), ::one(), ::zero())) { return };
+        f(Vec3::new(::zero(), ::zero(), ::one()));
     }
 
     #[inline(always)]
-    fn orthonormal_subspace_basis(n: &Vec3<N>, f: |Vec3<N>| -> bool) {
+    fn orthonormal_subspace_basis<F: FnMut(Vec3<N>) -> bool>(n: &Vec3<N>, mut f: F) {
         let a = 
-            if n.x.clone().abs() > n.y.clone().abs() {
-                Norm::normalize_cpy(&Vec3::new(n.z.clone(), Zero::zero(), -n.x))
+            if n.x.abs() > n.y.abs() {
+                Norm::normalize(&Vec3::new(n.z, ::zero(), -n.x))
             }
             else {
-                Norm::normalize_cpy(&Vec3::new(Zero::zero(), -n.z, n.y.clone()))
+                Norm::normalize(&Vec3::new(::zero(), -n.z, n.y))
             };
 
         if !f(Cross::cross(&a, n)) { return };
@@ -137,15 +183,15 @@ impl<N: BaseFloat> Basis for Vec3<N> {
     }
 
     #[inline]
-    fn canonical_basis_element(i: uint) -> Option<Vec3<N>> {
+    fn canonical_basis_element(i: usize) -> Option<Vec3<N>> {
         if i == 0 {
-            Some(Vec3::new(One::one(), Zero::zero(), Zero::zero()))
+            Some(Vec3::new(::one(), ::zero(), ::zero()))
         }
         else if i == 1 {
-            Some(Vec3::new(Zero::zero(), One::one(), Zero::zero()))
+            Some(Vec3::new(::zero(), ::one(), ::zero()))
         }
         else if i == 2 {
-            Some(Vec3::new(Zero::zero(), Zero::zero(), One::one()))
+            Some(Vec3::new(::zero(), ::zero(), ::one()))
         }
         else {
             None
@@ -154,7 +200,7 @@ impl<N: BaseFloat> Basis for Vec3<N> {
 }
 
 // FIXME: this bad: this fixes definitly the number of samples…
-static SAMPLES_2_F64: [Vec2<f64>, ..21] = [
+static SAMPLES_2_F64: [Vec2<f64>; 21] = [
     Vec2 { x: 1.0,         y: 0.0         },
     Vec2 { x: 0.95557281,  y: 0.29475517  },
     Vec2 { x: 0.82623877,  y: 0.56332006  },
@@ -179,7 +225,7 @@ static SAMPLES_2_F64: [Vec2<f64>, ..21] = [
 ];
 
 // Those vectors come from bullet 3d
-static SAMPLES_3_F64: [Vec3<f64>, ..42] = [
+static SAMPLES_3_F64: [Vec3<f64>; 42] = [
     Vec3 { x: 0.000000 , y: -0.000000, z: -1.000000 },
     Vec3 { x: 0.723608 , y: -0.525725, z: -0.447219 },
     Vec3 { x: -0.276388, y: -0.850649, z: -0.447219 },
@@ -224,34 +270,35 @@ static SAMPLES_3_F64: [Vec3<f64>, ..42] = [
     Vec3 { x: 0.162456 , y: 0.499995 , z: 0.850654 }
 ];
 
-impl<N: One + Clone> UniformSphereSample for Vec1<N> {
+impl<N> UniformSphereSample for Vec1<N>
+    where Vec1<N>: One {
     #[inline(always)]
-    fn sample(f: |Vec1<N>| -> ()) {
-        f(One::one())
+    fn sample<F: FnMut(Vec1<N>)>(mut f: F) {
+        f(::one())
      }
 }
 
-impl<N: Cast<f64> + Clone> UniformSphereSample for Vec2<N> {
+impl<N: Cast<f64> + Copy> UniformSphereSample for Vec2<N> {
     #[inline(always)]
-    fn sample(f: |Vec2<N>| -> ()) {
+    fn sample<F: FnMut(Vec2<N>)>(mut f: F) {
          for sample in SAMPLES_2_F64.iter() {
              f(Cast::from(*sample))
          }
      }
 }
 
-impl<N: Cast<f64> + Clone> UniformSphereSample for Vec3<N> {
+impl<N: Cast<f64> + Copy> UniformSphereSample for Vec3<N> {
     #[inline(always)]
-    fn sample(f: |Vec3<N>| -> ()) {
+    fn sample<F: FnMut(Vec3<N>)>(mut f: F) {
         for sample in SAMPLES_3_F64.iter() {
             f(Cast::from(*sample))
         }
     }
 }
 
-impl<N: Cast<f64> + Clone> UniformSphereSample for Vec4<N> {
+impl<N: Cast<f64> + Copy> UniformSphereSample for Vec4<N> {
     #[inline(always)]
-    fn sample(_: |Vec4<N>| -> ()) {
+    fn sample<F: FnMut(Vec4<N>)>(_: F) {
         panic!("UniformSphereSample::<Vec4<N>>::sample : Not yet implemented.")
         // for sample in SAMPLES_3_F32.iter() {
         //     f(Cast::from(*sample))

@@ -1,10 +1,12 @@
 //! Low level operations on vectors and matrices.
 
-use std::num::{Float, SignedInt};
+use num::{Float, Signed};
+use std::ops::Mul;
+use std::cmp::Ordering;
 use traits::structure::SquareMat;
 
 /// Result of a partial ordering.
-#[deriving(Eq, PartialEq, Encodable, Decodable, Clone, Show)]
+#[derive(Eq, PartialEq, RustcEncodable, RustcDecodable, Clone, Debug, Copy)]
 pub enum POrdering {
     /// Result of a strict comparison.
     PartialLess,
@@ -19,40 +21,40 @@ pub enum POrdering {
 impl POrdering {
     /// Returns `true` if `self` is equal to `Equal`.
     pub fn is_eq(&self) -> bool {
-        *self == PartialEqual
+        *self == POrdering::PartialEqual
     }
 
     /// Returns `true` if `self` is equal to `Less`.
     pub fn is_lt(&self) -> bool {
-        *self == PartialLess
+        *self == POrdering::PartialLess
     }
 
     /// Returns `true` if `self` is equal to `Less` or `Equal`.
     pub fn is_le(&self) -> bool {
-        *self == PartialLess || *self == PartialEqual
+        *self == POrdering::PartialLess || *self == POrdering::PartialEqual
     }
 
     /// Returns `true` if `self` is equal to `Greater`.
     pub fn is_gt(&self) -> bool {
-        *self == PartialGreater
+        *self == POrdering::PartialGreater
     }
 
     /// Returns `true` if `self` is equal to `Greater` or `Equal`.
     pub fn is_ge(&self) -> bool {
-        *self == PartialGreater || *self == PartialEqual
+        *self == POrdering::PartialGreater || *self == POrdering::PartialEqual
     }
 
     /// Returns `true` if `self` is equal to `NotComparable`.
     pub fn is_not_comparable(&self) -> bool {
-        *self == NotComparable
+        *self == POrdering::NotComparable
     }
 
     /// Creates a `POrdering` from an `Ordering`.
     pub fn from_ordering(ord: Ordering) -> POrdering {
         match ord {
-            Less    => PartialLess,
-            Equal   => PartialEqual,
-            Greater => PartialGreater
+            Ordering::Less    => POrdering::PartialLess,
+            Ordering::Equal   => POrdering::PartialEqual,
+            Ordering::Greater => POrdering::PartialGreater
         }
     }
 
@@ -61,75 +63,75 @@ impl POrdering {
     /// Returns `None` if `self` is `NotComparable`.
     pub fn to_ordering(self) -> Option<Ordering> {
         match self {
-            PartialLess    => Some(Less),
-            PartialEqual   => Some(Equal),
-            PartialGreater => Some(Greater),
-            NotComparable  => None
+            POrdering::PartialLess    => Some(Ordering::Less),
+            POrdering::PartialEqual   => Some(Ordering::Equal),
+            POrdering::PartialGreater => Some(Ordering::Greater),
+            POrdering::NotComparable  => None
         }
     }
 }
 
 /// Pointwise ordering operations.
 pub trait POrd {
-    /// Returns the infimum of `a` and `b`.
-    fn inf(a: &Self, b: &Self) -> Self;
+    /// Returns the infimum of this value and another
+    fn inf(&self, other: &Self) -> Self;
 
-    /// Returns the supremum of `a` and `b`.
-    fn sup(a: &Self, b: &Self) -> Self;
+    /// Returns the supremum of this value and another
+    fn sup(&self, other: &Self) -> Self;
 
-    /// Compare `a` and `b` using a partial ordering relation.
-    fn partial_cmp(a: &Self, b: &Self) -> POrdering;
+    /// Compare `self` and `other` using a partial ordering relation.
+    fn partial_cmp(&self, other: &Self) -> POrdering;
 
-    /// Returns `true` iff `a` and `b` are comparable and `a <= b`.
+    /// Returns `true` iff `self` and `other` are comparable and `self <= other`.
     #[inline]
-    fn partial_le(a: &Self, b: &Self) -> bool {
-        POrd::partial_cmp(a, b).is_le()
+    fn partial_le(&self, other: &Self) -> bool {
+        POrd::partial_cmp(self, other).is_le()
     }
 
-    /// Returns `true` iff `a` and `b` are comparable and `a < b`.
+    /// Returns `true` iff `self` and `other` are comparable and `self < other`.
     #[inline]
-    fn partial_lt(a: &Self, b: &Self) -> bool {
-        POrd::partial_cmp(a, b).is_lt()
+    fn partial_lt(&self, other: &Self) -> bool {
+        POrd::partial_cmp(self, other).is_lt()
     }
 
-    /// Returns `true` iff `a` and `b` are comparable and `a >= b`.
+    /// Returns `true` iff `self` and `other` are comparable and `self >= other`.
     #[inline]
-    fn partial_ge(a: &Self, b: &Self) -> bool {
-        POrd::partial_cmp(a, b).is_ge()
+    fn partial_ge(&self, other: &Self) -> bool {
+        POrd::partial_cmp(self, other).is_ge()
     }
 
-    /// Returns `true` iff `a` and `b` are comparable and `a > b`.
+    /// Returns `true` iff `self` and `other` are comparable and `self > other`.
     #[inline]
-    fn partial_gt(a: &Self, b: &Self) -> bool {
-        POrd::partial_cmp(a, b).is_gt()
+    fn partial_gt(&self, other: &Self) -> bool {
+        POrd::partial_cmp(self, other).is_gt()
     }
 
-    /// Return the minimum of `a` and `b` if they are comparable.
+    /// Return the minimum of `self` and `other` if they are comparable.
     #[inline]
-    fn partial_min<'a>(a: &'a Self, b: &'a Self) -> Option<&'a Self> {
-        match POrd::partial_cmp(a, b) {
-            PartialLess | PartialEqual => Some(a),
-            PartialGreater             => Some(b),
-            NotComparable              => None
+    fn partial_min<'a>(&'a self, other: &'a Self) -> Option<&'a Self> {
+        match POrd::partial_cmp(self, other) {
+            POrdering::PartialLess | POrdering::PartialEqual => Some(self),
+            POrdering::PartialGreater             => Some(other),
+            POrdering::NotComparable              => None
         }
     }
 
-    /// Return the maximum of `a` and `b` if they are comparable.
+    /// Return the maximum of `self` and `other` if they are comparable.
     #[inline]
-    fn partial_max<'a>(a: &'a Self, b: &'a Self) -> Option<&'a Self> {
-        match POrd::partial_cmp(a, b) {
-            PartialGreater | PartialEqual => Some(a),
-            PartialLess                   => Some(b),
-            NotComparable                 => None
+    fn partial_max<'a>(&'a self, other: &'a Self) -> Option<&'a Self> {
+        match POrd::partial_cmp(self, other) {
+            POrdering::PartialGreater | POrdering::PartialEqual => Some(self),
+            POrdering::PartialLess   => Some(other),
+            POrdering::NotComparable => None
         }
     }
 
     /// Clamp `value` between `min` and `max`. Returns `None` if `value` is not comparable to
     /// `min` or `max`.
     #[inline]
-    fn partial_clamp<'a>(value: &'a Self, min: &'a Self, max: &'a Self) -> Option<&'a Self> {
-        let v_min = POrd::partial_cmp(value, min);
-        let v_max = POrd::partial_cmp(value, max);
+    fn partial_clamp<'a>(&'a self, min: &'a Self, max: &'a Self) -> Option<&'a Self> {
+        let v_min = self.partial_cmp(min);
+        let v_max = self.partial_cmp(max);
 
         if v_min.is_not_comparable() || v_max.is_not_comparable() {
             None
@@ -142,24 +144,30 @@ pub trait POrd {
                 Some(max)
             }
             else {
-                Some(value)
+                Some(self)
             }
         }
     }
 }
 
 /// Trait for testing approximate equality
-pub trait ApproxEq<Eps> {
+pub trait ApproxEq<Eps>: Sized {
     /// Default epsilon for approximation.
-    fn approx_epsilon(unused_self: Option<Self>) -> Eps;
+    fn approx_epsilon(unused_mut: Option<Self>) -> Eps;
 
     /// Tests approximate equality using a custom epsilon.
-    fn approx_eq_eps(a: &Self, other: &Self, epsilon: &Eps) -> bool;
+    fn approx_eq_eps(&self, other: &Self, epsilon: &Eps) -> bool;
+
+    /// Default ULPs for approximation.
+    fn approx_ulps(unused_mut: Option<Self>) -> u32;
+
+    /// Tests approximate equality using units in the last place (ULPs)
+    fn approx_eq_ulps(&self, other: &Self, ulps: u32) -> bool;
 
     /// Tests approximate equality.
     #[inline]
-    fn approx_eq(a: &Self, b: &Self) -> bool {
-        ApproxEq::approx_eq_eps(a, b, &ApproxEq::approx_epsilon(None::<Self>))
+    fn approx_eq(&self, other: &Self) -> bool {
+        self.approx_eq_eps(other, &ApproxEq::approx_epsilon(None::<Self>))
     }
 }
 
@@ -170,8 +178,27 @@ impl ApproxEq<f32> for f32 {
     }
 
     #[inline]
-    fn approx_eq_eps(a: &f32, b: &f32, epsilon: &f32) -> bool {
-        ::abs(&(*a - *b)) < *epsilon
+    fn approx_eq_eps(&self, other: &f32, epsilon: &f32) -> bool {
+        ::abs(&(*self - *other)) < *epsilon
+    }
+
+    fn approx_ulps(_: Option<f32>) -> u32 {
+        8
+    }
+
+    fn approx_eq_ulps(&self, other: &f32, ulps: u32) -> bool {
+        // Handle -0 == +0
+        if *self == *other { return true; }
+
+        // Otherwise, differing signs should be not-equal, even if within ulps
+        if self.signum() != other.signum() { return false; }
+
+        // IEEE754 floats are in the same order as 2s complement isizes
+        // so this trick (subtracting the isizes) works.
+        let iself: i32 = unsafe { ::std::mem::transmute(*self) };
+        let iother: i32 = unsafe { ::std::mem::transmute(*other) };
+
+        (iself - iother).abs() < ulps as i32
     }
 }
 
@@ -182,8 +209,61 @@ impl ApproxEq<f64> for f64 {
     }
 
     #[inline]
-    fn approx_eq_eps(a: &f64, b: &f64, approx_epsilon: &f64) -> bool {
-        ::abs(&(*a - *b)) < *approx_epsilon
+    fn approx_eq_eps(&self, other: &f64, approx_epsilon: &f64) -> bool {
+        ::abs(&(*self - *other)) < *approx_epsilon
+    }
+
+    fn approx_ulps(_: Option<f64>) -> u32 {
+        8
+    }
+
+    fn approx_eq_ulps(&self, other: &f64, ulps: u32) -> bool {
+        // Handle -0 == +0
+        if *self == *other { return true; }
+
+        // Otherwise, differing signs should be not-equal, even if within ulps
+        if self.signum() != other.signum() { return false; }
+
+        let iself: i64 = unsafe { ::std::mem::transmute(*self) };
+        let iother: i64 = unsafe { ::std::mem::transmute(*other) };
+
+        (iself - iother).abs() < ulps as i64
+    }
+}
+
+impl<'a, N, T: ApproxEq<N>> ApproxEq<N> for &'a T {
+    fn approx_epsilon(_: Option<&'a T>) -> N {
+        ApproxEq::approx_epsilon(None::<T>)
+    }
+
+    fn approx_eq_eps(&self, other: &&'a T, approx_epsilon: &N) -> bool {
+        ApproxEq::approx_eq_eps(*self, *other, approx_epsilon)
+    }
+
+    fn approx_ulps(_: Option<&'a T>) -> u32 {
+        ApproxEq::approx_ulps(None::<T>)
+    }
+
+    fn approx_eq_ulps(&self, other: &&'a T, ulps: u32) -> bool {
+        ApproxEq::approx_eq_ulps(*self, *other, ulps)
+    }
+}
+
+impl<'a, N, T: ApproxEq<N>> ApproxEq<N> for &'a mut T {
+    fn approx_epsilon(_: Option<&'a mut T>) -> N {
+        ApproxEq::approx_epsilon(None::<T>)
+    }
+
+    fn approx_eq_eps(&self, other: &&'a mut T, approx_epsilon: &N) -> bool {
+        ApproxEq::approx_eq_eps(*self, *other, approx_epsilon)
+    }
+
+    fn approx_ulps(_: Option<&'a mut T>) -> u32 {
+        ApproxEq::approx_ulps(None::<T>)
+    }
+
+    fn approx_eq_ulps(&self, other: &&'a mut T, ulps: u32) -> bool {
+        ApproxEq::approx_eq_ulps(*self, *other, ulps)
     }
 }
 
@@ -196,33 +276,36 @@ pub trait Absolute<A> {
 }
 
 /// Trait of objects having an inverse. Typically used to implement matrix inverse.
-pub trait Inv {
+pub trait Inv: Sized {
     /// Returns the inverse of `m`.
-    fn inv_cpy(m: &Self) -> Option<Self>;
+    fn inv(&self) -> Option<Self>;
 
     /// In-place version of `inverse`.
-    fn inv(&mut self) -> bool;
+    fn inv_mut(&mut self) -> bool;
 }
 
 /// Trait of objects having a determinant. Typically used by square matrices.
 pub trait Det<N> {
     /// Returns the determinant of `m`.
-    fn det(m: &Self) -> N;
+    fn det(&self) -> N;
 }
 
 /// Trait of objects which can be transposed.
 pub trait Transpose {
     /// Computes the transpose of a matrix.
-    fn transpose_cpy(m: &Self) -> Self;
+    fn transpose(&self) -> Self;
 
     /// In-place version of `transposed`.
-    fn transpose(&mut self);
+    fn transpose_mut(&mut self);
 }
 
 /// Traits of objects having an outer product.
-pub trait Outer<M> {
+pub trait Outer {
+    /// Result type of the outer product.
+    type OuterProductType;
+
     /// Computes the outer product: `a * b`
-    fn outer(a: &Self, b: &Self) -> M;
+    fn outer(&self, other: &Self) -> Self::OuterProductType;
 }
 
 /// Trait for computing the covariance of a set of data.
@@ -231,14 +314,14 @@ pub trait Cov<M> {
     ///
     ///   * For matrices, observations are stored in its rows.
     ///   * For vectors, observations are stored in its components (thus are 1-dimensional).
-    fn cov(m: &Self) -> M;
+    fn cov(&self) -> M;
 
     /// Computes the covariance of the obsevations stored by `m`:
     ///
     ///   * For matrices, observations are stored in its rows.
     ///   * For vectors, observations are stored in its components (thus are 1-dimensional).
-    fn cov_to(m: &Self, out: &mut M) {
-        *out = Cov::cov(m)
+    fn cov_to(&self, out: &mut M) {
+        *out = self.cov()
     }
 }
 
@@ -248,96 +331,13 @@ pub trait Mean<N> {
     /// 
     ///   * For matrices, observations are stored in its rows.
     ///   * For vectors, observations are stored in its components (thus are 1-dimensional).
-    fn mean(v: &Self) -> N;
+    fn mean(&self) -> N;
 }
 
 /// Trait for computing the eigenvector and eigenvalues of a square matrix usin the QR algorithm.
-pub trait EigenQR<N, V>: SquareMat<N, V> {
+pub trait EigenQR<N, V: Mul<Self, Output = V>>: SquareMat<N, V> {
     /// Computes the eigenvectors and eigenvalues of this matrix.
-    fn eigen_qr(m: &Self, eps: &N, niter: uint) -> (Self, V);
-}
-
-
-// /// Cholesky decomposition.
-// pub trait Chol {
-//     /// Performs the cholesky decomposition on `self`. The resulting upper-triangular matrix is
-//     /// returned. Returns `None` if the matrix is not symetric positive-definite.
-//     fn chol(self) -> Option<Self>;
-// 
-//     /// Performs the cholesky decomposition on `self`. The resulting upper-triangular matrix is
-//     /// written to a given parameter. If the decomposition fails `false` is returned; the state of
-//     /// the output parameter is undefined.
-//     fn chol_to(&self, out: &mut Self) -> bool {
-//         match self.chol() {
-//             None => false,
-//             Some(decomp) => {
-//                 *out = decomp;
-//                 true
-//             }
-//         }
-//     }
-// }
-
-// XXX: those two traits should not exist since there is generalized operator overloading of Add
-// and Sub.
-// However, using the same trait multiple time as a trait bound (ex: impl<T: Add<N, V> + Add<V, V>)
-// does not work properly, mainly because the way we are doing generalized operator overloading is
-// verry hacky.
-//
-// Hopefully, this will be fixed on a future version of the language!
-/// Trait of objects having a right multiplication with another element.
-pub trait RMul<V> {
-    /// Computes `self * v`
-    fn rmul(&self, v: &V) -> V;
-}
-
-impl<M: Mul<T, T>, T> RMul<T> for M {
-    fn rmul(&self, v: &T) -> T {
-        *self * *v
-    }
-}
-
-/// Trait of objects having a left multiplication with another element.
-pub trait LMul<V> {
-    /// Computes `v * self`
-    fn lmul(&self, &V) -> V;
-}
-
-impl<T: Mul<M, T>, M> LMul<T> for M {
-    fn lmul(&self, v: &T) -> T {
-        *v * *self
-    }
-}
-
-// XXX: those traits should not exist since there is generalized operator overloading of Add and
-// Sub.
-// However, using the same trait multiple time as a trait bound (ex: impl<T: Add<N, V> + Add<V, V>)
-// does not work properly, mainly because the way we are doing generalized operator overloading is
-// verry hacky.
-//
-// Hopefully, this will be fixed on a future version of the language!
-/// Trait of objects having an addition with a scalar.
-pub trait ScalarAdd<N> {
-    /// Gets the result of `self + n`.
-    fn add_s(&self, n: &N) -> Self;
-}
-
-/// Trait of objects having a subtraction with a scalar.
-pub trait ScalarSub<N> {
-    /// Gets the result of `self - n`.
-    fn sub_s(&self, n: &N) -> Self;
-}
-
-/// Trait of objects having a multiplication with a scalar.
-pub trait ScalarMul<N> {
-    /// Gets the result of `self * n`.
-    fn mul_s(&self, n: &N) -> Self;
-}
-
-/// Trait of objects having a division by a scalar.
-pub trait ScalarDiv<N> {
-    /// Gets the result of `self / n`.
-    fn div_s(&self, n: &N) -> Self;
+    fn eigen_qr(&self, eps: &N, niter: usize) -> (Self, V);
 }
 
 /// Trait of objects implementing the `y = ax + y` operation.
@@ -347,7 +347,11 @@ pub trait Axpy<N> {
 }
 
 /*
- * Some implementation for scalar types.
+ *
+ *
+ * Some implementations for scalar types.
+ *
+ *
  */
 // FIXME: move this to another module ?
 macro_rules! impl_absolute(
@@ -359,7 +363,7 @@ macro_rules! impl_absolute(
             }
         }
     }
-)
+);
 macro_rules! impl_absolute_id(
     ($n: ty) => {
         impl Absolute<$n> for $n {
@@ -369,16 +373,41 @@ macro_rules! impl_absolute_id(
             }
         }
     }
-)
+);
 
-impl_absolute!(f32)
-impl_absolute!(f64)
-impl_absolute!(i16)
-impl_absolute!(i32)
-impl_absolute!(i64)
-impl_absolute!(int)
-impl_absolute_id!(u8)
-impl_absolute_id!(u16)
-impl_absolute_id!(u32)
-impl_absolute_id!(u64)
-impl_absolute_id!(uint)
+impl_absolute!(f32);
+impl_absolute!(f64);
+impl_absolute!(i8);
+impl_absolute!(i16);
+impl_absolute!(i32);
+impl_absolute!(i64);
+impl_absolute!(isize);
+impl_absolute_id!(u8);
+impl_absolute_id!(u16);
+impl_absolute_id!(u32);
+impl_absolute_id!(u64);
+impl_absolute_id!(usize);
+
+macro_rules! impl_axpy(
+    ($n: ty) => {
+        impl Axpy<$n> for $n {
+            #[inline]
+            fn axpy(&mut self, a: &$n, x: &$n) {
+                *self = *self + *a * *x
+            }
+        }
+    }
+);
+
+impl_axpy!(f32);
+impl_axpy!(f64);
+impl_axpy!(i8);
+impl_axpy!(i16);
+impl_axpy!(i32);
+impl_axpy!(i64);
+impl_axpy!(isize);
+impl_axpy!(u8);
+impl_axpy!(u16);
+impl_axpy!(u32);
+impl_axpy!(u64);
+impl_axpy!(usize);

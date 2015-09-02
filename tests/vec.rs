@@ -1,13 +1,12 @@
-#![feature(macro_rules)]
+extern crate nalgebra as na;
+extern crate rand;
 
-extern crate "nalgebra" as na;
-
-use std::rand::random;
-use na::{Vec0, Vec1, Vec2, Vec3, Vec4, Vec5, Vec6, Mat3, Iterable, IterableMut};
+use rand::random;
+use na::{Vec0, Vec1, Vec2, Vec3, Vec4, Vec5, Vec6, Mat3, Rot2, Rot3, Iterable, IterableMut};
 
 macro_rules! test_iterator_impl(
     ($t: ty, $n: ty) => (
-        for _ in range(0u, 10000) {
+        for _ in (0usize .. 10000) {
             let v: $t      = random();
             let mut mv: $t = v.clone();
             let n: $n      = random();
@@ -21,22 +20,22 @@ macro_rules! test_iterator_impl(
             assert!(nv == mv && nv == v * n);
         }
     )
-)
+);
 
 macro_rules! test_commut_dot_impl(
     ($t: ty) => (
-        for _ in range(0u, 10000) {
+        for _ in (0usize .. 10000) {
             let v1 : $t = random();
             let v2 : $t = random();
 
             assert!(na::approx_eq(&na::dot(&v1, &v2), &na::dot(&v2, &v1)));
         }
     );
-)
+);
 
 macro_rules! test_scalar_op_impl(
     ($t: ty, $n: ty) => (
-        for _ in range(0u, 10000) {
+        for _ in (0usize .. 10000) {
             let v1 : $t = random();
             let n  : $n = random();
 
@@ -55,11 +54,11 @@ macro_rules! test_scalar_op_impl(
             assert!(na::approx_eq(&v1, &v0));
         }
     );
-)
+);
 
 macro_rules! test_basis_impl(
     ($t: ty) => (
-        for _ in range(0u, 10000) {
+        for _ in (0usize .. 10000) {
             na::canonical_basis(|e1: $t| {
                 na::canonical_basis(|e2: $t| {
                     assert!(e1 == e2 || na::approx_eq(&na::dot(&e1, &e2), &na::zero()));
@@ -73,11 +72,11 @@ macro_rules! test_basis_impl(
             })
         }
     );
-)
+);
 
 macro_rules! test_subspace_basis_impl(
     ($t: ty) => (
-        for _ in range(0u, 10000) {
+        for _ in (0usize .. 10000) {
             let v : $t = random();
             let v1     = na::normalize(&v);
 
@@ -97,11 +96,11 @@ macro_rules! test_subspace_basis_impl(
             })
         }
     );
-)
+);
 
 #[test]
 fn test_cross_vec3() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let v1 : Vec3<f64> = random();
         let v2 : Vec3<f64> = random();
         let v3 : Vec3<f64> = na::cross(&v1, &v2);
@@ -317,4 +316,66 @@ fn test_outer_vec3() {
             4.0, 5.0, 6.0,
             8.0, 10.0, 12.0,
             12.0, 15.0, 18.0));
+}
+
+
+#[test]
+fn test_vec3_rotation_between() {
+    for _ in (0usize .. 10000) {
+        let v1: Vec3<f64> = random();
+
+        let mut v2: Vec3<f64> = random();
+        v2 = na::normalize(&v2) * na::norm(&v1);
+
+        let rot = na::rotation_between(&v1, &v2);
+
+        assert!(na::approx_eq(&(rot * v1), &v2))
+    }
+}
+
+#[test]
+fn test_vec3_angle_between() {
+    for _ in (0usize .. 10000) {
+        let vec: Vec3<f64> = random();
+        let other: Vec3<f64> = random();
+
+        // Ensure the axis we are using is orthogonal to `vec`.
+        let axis_ang = na::cross(&vec, &other);
+        let ang      = na::norm(&axis_ang);
+        let rot      = Rot3::new(axis_ang);
+
+        let delta = na::angle_between(&vec, &(rot * vec));
+
+        assert!(na::approx_eq(&ang, &delta))
+    }
+}
+
+
+#[test]
+fn test_vec2_rotation_between() {
+    for _ in (0usize .. 10000) {
+        let v1: Vec2<f64> = random();
+
+        let mut v2: Vec2<f64> = random();
+        v2 = na::normalize(&v2) * na::norm(&v1);
+
+        let rot = na::rotation_between(&v1, &v2);
+
+        assert!(na::approx_eq(&(rot * v1), &v2))
+    }
+}
+
+#[test]
+fn test_vec2_angle_between() {
+    for _ in (0usize .. 10000) {
+        let axis_ang: Vec1<f64> = random();
+        let ang = na::norm(&axis_ang);
+
+        let rot: Rot2<f64> = Rot2::new(axis_ang);
+        let vec: Vec2<f64> = random();
+
+        let delta = na::angle_between(&vec, &(rot * vec));
+
+        assert!(na::approx_eq(&ang, &delta))
+    }
 }

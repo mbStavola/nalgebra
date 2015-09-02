@@ -1,4 +1,7 @@
-# nalgebra
+[![Build Status](https://travis-ci.org/sebcrozet/nalgebra.svg?branch=master)](https://travis-ci.org/sebcrozet/nalgebra)
+
+nalgebra
+========
 
 **nalgebra** is a low-dimensional linear algebra library written for Rust targeting:
 
@@ -23,18 +26,19 @@ The preferred way to use **nalgebra** is to import types and traits explicitly, 
 free-functions using the `na::` prefix:
 
 ```.rust
-extern crate "nalgebra" as na;
+extern crate nalgebra as na;
 use na::{Vec3, Rot3, Rotation};
 
 fn main() {
     let     a = Vec3::new(1.0f64, 1.0, 1.0);
     let mut b = Rot3::new(na::zero());
 
-    b.append_rotation(&a);
+    b.append_rotation_mut(&a);
 
     assert!(na::approx_eq(&na::rotation(&b), &a));
 }
 ```
+
 
 ## Features
 **nalgebra** is meant to be a general-purpose, low-dimensional, linear algebra library, with
@@ -51,20 +55,4 @@ an optimized set of tools for computer graphics and physics. Those features incl
 * Dynamically sized (square or rectangular) matrix: `DMat`.
 * A few methods for data analysis: `Cov`, `Mean`.
 * Almost one trait per functionality: useful for generic programming.
-* Operator overloading using the double trait dispatch
-  [trick](http://smallcultfollowing.com/babysteps/blog/2012/10/04/refining-traits-slash-impls/).
-  For example, the following works:
-
-```rust
-extern crate "nalgebra" as na;
-use na::{Vec3, Mat3};
-
-fn main() {
-    let v: Vec3<f64> = na::zero();
-    let m: Mat3<f64> = na::one();
-
-    let _ = m * v;      // matrix-vector multiplication.
-    let _ = v * m;      // vector-matrix multiplication.
-    let _ = m * m;      // matrix-matrix multiplication.
-    let _ = v * 2.0f64; // vector-scalar multiplication.
-}
+* Operator overloading using multidispatch.

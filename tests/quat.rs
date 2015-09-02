@@ -1,13 +1,12 @@
-#![feature(macro_rules)]
-
-extern crate "nalgebra" as na;
+extern crate nalgebra as na;
+extern crate rand;
 
 use na::{Pnt3, Vec3, Rot3, UnitQuat, Rotation};
-use std::rand::random;
+use rand::random;
 
 #[test]
 fn test_quat_as_mat() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let axis_angle: Vec3<f64> = random();
 
         assert!(na::approx_eq(&UnitQuat::new(axis_angle).to_rot(), &Rot3::new(axis_angle)))
@@ -16,7 +15,7 @@ fn test_quat_as_mat() {
 
 #[test]
 fn test_quat_mul_vec_or_pnt_as_mat() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let axis_angle: Vec3<f64> = random();
         let vec: Vec3<f64> = random();
         let pnt: Pnt3<f64> = random();
@@ -33,7 +32,7 @@ fn test_quat_mul_vec_or_pnt_as_mat() {
 
 #[test]
 fn test_quat_div_quat() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let axis_angle1: Vec3<f64> = random();
         let axis_angle2: Vec3<f64> = random();
 
@@ -49,19 +48,19 @@ fn test_quat_div_quat() {
 
 #[test]
 fn test_quat_to_axis_angle() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let axis_angle: Vec3<f64> = random();
 
         let q = UnitQuat::new(axis_angle);
 
-        println!("{} {}", q.rotation(), axis_angle);
+        println!("{:?} {:?}", q.rotation(), axis_angle);
         assert!(na::approx_eq(&q.rotation(), &axis_angle))
     }
 }
 
 #[test]
 fn test_quat_euler_angles() {
-    for _ in range(0u, 10000) {
+    for _ in (0usize .. 10000) {
         let angles: Vec3<f64> = random();
 
         let q = UnitQuat::new_with_euler_angles(angles.x, angles.y, angles.z);
@@ -69,4 +68,25 @@ fn test_quat_euler_angles() {
 
         assert!(na::approx_eq(&q.to_rot(), &m))
     }
+}
+
+#[test]
+fn test_quat_rotation_between() {
+    let q1: UnitQuat<f64> = random();
+    let q2: UnitQuat<f64> = random();
+
+    let delta = na::rotation_between(&q1, &q2);
+
+    assert!(na::approx_eq(&(delta * q1), &q2))
+}
+
+#[test]
+fn test_quat_angle_between() {
+    let q1: UnitQuat<f64> = random();
+    let q2: UnitQuat<f64> = random();
+
+    let delta = na::rotation_between(&q1, &q2);
+    let delta_angle = na::angle_between(&q1, &q2);
+
+    assert!(na::approx_eq(&na::norm(&na::rotation(&delta)), &delta_angle))
 }

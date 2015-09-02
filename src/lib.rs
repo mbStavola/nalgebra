@@ -24,14 +24,14 @@ The preferred way to use **nalgebra** is to import types and traits explicitly, 
 free-functions using the `na::` prefix:
 
 ```.rust
-extern crate "nalgebra" as na;
+extern crate nalgebra as na;
 use na::{Vec3, Rot3, Rotation};
 
 fn main() {
     let     a = Vec3::new(1.0f64, 1.0, 1.0);
     let mut b = Rot3::new(na::zero());
 
-    b.append_rotation(&a);
+    b.append_rotation_mut(&a);
 
     assert!(na::approx_eq(&na::rotation(&b), &a));
 }
@@ -52,35 +52,7 @@ an optimized set of tools for computer graphics and physics. Those features incl
 * Dynamically sized (square or rectangular) matrix: `DMat`.
 * A few methods for data analysis: `Cov`, `Mean`.
 * Almost one trait per functionality: useful for generic programming.
-* Operator overloading using the double trait dispatch
-  [trick](http://smallcultfollowing.com/babysteps/blog/2012/10/04/refining-traits-slash-impls/).
-  For example, the following works:
-
-```rust
-extern crate "nalgebra" as na;
-use na::{Vec3, Mat3};
-
-fn main() {
-    let v: Vec3<f64> = na::zero();
-    let m: Mat3<f64> = na::one();
-
-    let _ = m * v;      // matrix-vector multiplication.
-    let _ = v * m;      // vector-matrix multiplication.
-    let _ = m * m;      // matrix-matrix multiplication.
-    let _ = v * 2.0f64; // vector-scalar multiplication.
-}
-```
-
-## Compilation
-You will need the last nightly build of the [rust compiler](http://www.rust-lang.org)
-and the official package manager: [cargo](https://github.com/rust-lang/cargo).
-
-Simply add the following to your `Cargo.toml` file:
-
-```.ignore
-[dependencies.nalgebra]
-git = "https://github.com/sebcrozet/nalgebra"
-```
+* Operator overloading using multidispatch.
 
 
 ## **nalgebra** in use
@@ -99,27 +71,27 @@ Feel free to add your project to this list if you happen to use **nalgebra**!
 #![deny(unused_qualifications)]
 #![deny(unused_results)]
 #![warn(missing_docs)]
-#![feature(macro_rules)]
-#![feature(globs)]
 #![doc(html_root_url = "http://nalgebra.org/doc")]
 
-extern crate serialize;
+extern crate rustc_serialize;
+extern crate rand;
+extern crate num;
 
-#[cfg(test)]
-extern crate test;
+#[cfg(feature="arbitrary")]
+extern crate quickcheck;
 
-use std::num::{Zero, One};
 use std::cmp;
-pub use traits::{PartialLess, PartialEqual, PartialGreater, NotComparable};
+use std::ops::{Neg, Mul};
+use num::{Zero, One};
 pub use traits::{
     Absolute,
     AbsoluteRotate,
-    NumPnt,
-    NumVec,
     ApproxEq,
     Axpy,
     Basis,
     BaseFloat,
+    BaseNum,
+    Bounded,
     Cast,
     Col,
     ColSlice, RowSlice,
@@ -139,28 +111,26 @@ pub use traits::{
     Inv,
     Iterable,
     IterableMut,
-    LMul,
     Mat,
     Mean,
     Norm,
+    NumPnt,
+    NumVec,
     Orig,
     Outer,
     POrd,
     POrdering,
     PntAsVec,
-    RMul,
-    Rotate, Rotation, RotationMatrix, RotationWithTranslation,
+    Repeat,
+    Rotate, Rotation, RotationMatrix, RotationWithTranslation, RotationTo,
     Row,
-    ScalarAdd, ScalarSub,
-    ScalarMul, ScalarDiv,
     Shape,
     SquareMat,
     ToHomogeneous,
     Transform, Transformation,
     Translate, Translation,
     Transpose,
-    UniformSphereSample,
-    VecAsPnt
+    UniformSphereSample
 };
 
 pub use structs::{
@@ -180,50 +150,17 @@ pub use structs::{
 
 pub use linalg::{
     qr,
-    householder_matrix
+    householder_matrix,
+    cholesky
 };
 
 mod structs;
 mod traits;
 mod linalg;
+mod macros;
 
 // mod lower_triangular;
 // mod chol;
-
-/*
- * Reexport everything.
- */
-/// Traits to work around the language limitations related to operator overloading.
-///
-/// The trait names are formed by:
-///
-/// * a type name (eg. Vec1, Vec2, Mat3, Mat4, etc.).
-/// * the name of a binary operation (eg. Mul, Div, Add, Sub, etc.). 
-/// * the word `Rhs`.
-///
-/// When implemented by the type `T`, the trait makes it possible to overload the binary operator
-/// between `T` and the type name given by the trait.
-///
-/// # Examples:
-///
-/// * `Vec3MulRhs` will allow the overload of the `*` operator between the implementor type and
-/// `Vec3`. The `Vec3` being the first argument of the multiplication.
-/// * `Mat4DivRhs` will allow the overload of the `/` operator between the implementor type and
-/// `Mat4`. The `Mat4` being the first argument of the division.
-pub mod overload {
-    pub use structs::{Vec1MulRhs, Vec2MulRhs, Vec3MulRhs, Vec4MulRhs, Vec5MulRhs, Vec6MulRhs,
-                      Vec1DivRhs, Vec2DivRhs, Vec3DivRhs, Vec4DivRhs, Vec5DivRhs, Vec6DivRhs,
-                      Vec1AddRhs, Vec2AddRhs, Vec3AddRhs, Vec4AddRhs, Vec5AddRhs, Vec6AddRhs,
-                      Vec1SubRhs, Vec2SubRhs, Vec3SubRhs, Vec4SubRhs, Vec5SubRhs, Vec6SubRhs,
-                      Pnt1MulRhs, Pnt2MulRhs, Pnt3MulRhs, Pnt4MulRhs, Pnt5MulRhs, Pnt6MulRhs,
-                      Pnt1DivRhs, Pnt2DivRhs, Pnt3DivRhs, Pnt4DivRhs, Pnt5DivRhs, Pnt6DivRhs,
-                      Pnt1AddRhs, Pnt2AddRhs, Pnt3AddRhs, Pnt4AddRhs, Pnt5AddRhs, Pnt6AddRhs,
-                      Pnt1SubRhs, Pnt2SubRhs, Pnt3SubRhs, Pnt4SubRhs, Pnt5SubRhs, Pnt6SubRhs,
-                      Mat1MulRhs, Mat2MulRhs, Mat3MulRhs, Mat4MulRhs, Mat5MulRhs, Mat6MulRhs,
-                      Mat1DivRhs, Mat2DivRhs, Mat3DivRhs, Mat4DivRhs, Mat5DivRhs, Mat6DivRhs,
-                      Mat1AddRhs, Mat2AddRhs, Mat3AddRhs, Mat4AddRhs, Mat5AddRhs, Mat6AddRhs,
-                      Mat1SubRhs, Mat2SubRhs, Mat3SubRhs, Mat4SubRhs, Mat5SubRhs, Mat6SubRhs};
-}
 
 /// Change the input value to ensure it is on the range `[min, max]`.
 #[inline(always)]
@@ -336,6 +273,12 @@ pub fn zero<T: Zero>() -> T {
     Zero::zero()
 }
 
+/// Tests is a value is iqual to zero.
+#[inline(always)]
+pub fn is_zero<T: Zero>(val: &T) -> bool {
+    val.is_zero()
+}
+
 /// Create a one-valued value.
 ///
 /// This is the same as `std::num::one()`.
@@ -358,7 +301,7 @@ pub fn orig<P: Orig>() -> P {
 
 /// Returns the center of two points.
 #[inline]
-pub fn center<N: BaseFloat, P: FloatPnt<N, V>, V>(a: &P, b: &P) -> P {
+pub fn center<N: BaseFloat, P: FloatPnt<N, V>, V: Copy + Norm<N>>(a: &P, b: &P) -> P {
     let _2 = one::<N>() + one();
     (*a + *b.as_vec()) / _2
 }
@@ -369,35 +312,13 @@ pub fn center<N: BaseFloat, P: FloatPnt<N, V>, V>(a: &P, b: &P) -> P {
 /// Returns the distance between two points.
 #[inline(always)]
 pub fn dist<N: BaseFloat, P: FloatPnt<N, V>, V: Norm<N>>(a: &P, b: &P) -> N {
-    FloatPnt::<N, V>::dist(a, b)
+    a.dist(b)
 }
 
 /// Returns the squared distance between two points.
 #[inline(always)]
 pub fn sqdist<N: BaseFloat, P: FloatPnt<N, V>, V: Norm<N>>(a: &P, b: &P) -> N {
-    FloatPnt::<N, V>::sqdist(a, b)
-}
-
-/*
- * Perspective
- */
-/// Computes a projection matrix given the frustrum near plane width, height, the field of
-/// view, and the distance to the clipping planes (`znear` and `zfar`).
-#[deprecated = "Use `Persp3::new(width / height, fov, znear, zfar).as_mat()` instead"]
-pub fn perspective3d<N: BaseFloat + Cast<f64> + Zero + One>(width: N, height: N, fov: N, znear: N, zfar: N) -> Mat4<N> {
-    let aspect = width / height;
-
-    let _1: N = one();
-    let sy    = _1 / (fov * cast(0.5)).tan();
-    let sx    = -sy / aspect;
-    let sz    = -(zfar + znear) / (znear - zfar);
-    let tz    = zfar * znear * cast(2.0) / (znear - zfar);
-
-    Mat4::new(
-        sx,     zero(), zero(), zero(),
-        zero(), sy,     zero(), zero(),
-        zero(), zero(), sz,     tz,
-        zero(), zero(), one(),  zero())
+    a.sqdist(b)
 }
 
 /*
@@ -407,7 +328,7 @@ pub fn perspective3d<N: BaseFloat + Cast<f64> + Zero + One>(width: N, height: N,
 /// Gets the translation applicable by `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Iso3};
 ///
 /// fn main() {
@@ -425,7 +346,7 @@ pub fn translation<V, M: Translation<V>>(m: &M) -> V {
 /// Gets the inverse translation applicable by `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Iso3};
 ///
 /// fn main() {
@@ -443,7 +364,7 @@ pub fn inv_translation<V, M: Translation<V>>(m: &M) -> V {
 /// Applies the translation `v` to a copy of `m`.
 #[inline(always)]
 pub fn append_translation<V, M: Translation<V>>(m: &M, v: &V) -> M {
-    Translation::append_translation_cpy(m, v)
+    Translation::append_translation(m, v)
 }
 
 /*
@@ -453,7 +374,7 @@ pub fn append_translation<V, M: Translation<V>>(m: &M, v: &V) -> M {
 /// Applies a translation to a point.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Pnt3, Vec3, Iso3};
 ///
 /// fn main() {
@@ -473,7 +394,7 @@ pub fn translate<P, M: Translate<P>>(m: &M, p: &P) -> P {
 /// Applies an inverse translation to a point.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Pnt3, Vec3, Iso3};
 ///
 /// fn main() {
@@ -496,7 +417,7 @@ pub fn inv_translate<P, M: Translate<P>>(m: &M, p: &P) -> P {
 /// Gets the rotation applicable by `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Rot3};
 ///
 /// fn main() {
@@ -514,7 +435,7 @@ pub fn rotation<V, M: Rotation<V>>(m: &M) -> V {
 /// Gets the inverse rotation applicable by `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Rot3};
 ///
 /// fn main() {
@@ -532,7 +453,7 @@ pub fn inv_rotation<V, M: Rotation<V>>(m: &M) -> V {
 /// Applies the rotation `v` to a copy of `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Rot3};
 ///
 /// fn main() {
@@ -545,14 +466,14 @@ pub fn inv_rotation<V, M: Rotation<V>>(m: &M) -> V {
 /// ```
 #[inline(always)]
 pub fn append_rotation<V, M: Rotation<V>>(m: &M, v: &V) -> M {
-    Rotation::append_rotation_cpy(m, v)
+    Rotation::append_rotation(m, v)
 }
 
 // FIXME: this example is a bit shity
 /// Pre-applies the rotation `v` to a copy of `m`.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
+/// extern crate nalgebra as na;
 /// use na::{Vec3, Rot3};
 ///
 /// fn main() {
@@ -565,7 +486,7 @@ pub fn append_rotation<V, M: Rotation<V>>(m: &M, v: &V) -> M {
 /// ```
 #[inline(always)]
 pub fn prepend_rotation<V, M: Rotation<V>>(m: &M, v: &V) -> M {
-    Rotation::prepend_rotation_cpy(m, v)
+    Rotation::prepend_rotation(m, v)
 }
 
 /*
@@ -575,12 +496,11 @@ pub fn prepend_rotation<V, M: Rotation<V>>(m: &M, v: &V) -> M {
 /// Applies a rotation to a vector.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
-/// use std::num::Float;
-/// use na::{Rot3, Vec3};
+/// extern crate nalgebra as na;
+/// use na::{BaseFloat, Rot3, Vec3};
 ///
 /// fn main() {
-///     let t  = Rot3::new(Vec3::new(0.0f64, 0.0, 0.5 * Float::pi()));
+///     let t  = Rot3::new(Vec3::new(0.0f64, 0.0, 0.5 * <f64 as BaseFloat>::pi()));
 ///     let v  = Vec3::new(1.0, 0.0, 0.0);
 ///
 ///     let tv = na::rotate(&t, &v);
@@ -597,12 +517,11 @@ pub fn rotate<V, M: Rotate<V>>(m: &M, v: &V) -> V {
 /// Applies an inverse rotation to a vector.
 ///
 /// ```rust
-/// extern crate "nalgebra" as na;
-/// use std::num::Float;
-/// use na::{Rot3, Vec3};
+/// extern crate nalgebra as na;
+/// use na::{BaseFloat, Rot3, Vec3};
 ///
 /// fn main() {
-///     let t  = Rot3::new(Vec3::new(0.0f64, 0.0, 0.5 * Float::pi()));
+///     let t  = Rot3::new(Vec3::new(0.0f64, 0.0, 0.5 * <f64 as BaseFloat>::pi()));
 ///     let v  = Vec3::new(1.0, 0.0, 0.0);
 ///
 ///     let tv = na::inv_rotate(&t, &v);
@@ -621,23 +540,38 @@ pub fn inv_rotate<V, M: Rotate<V>>(m: &M, v: &V) -> V {
 
 /// Rotates a copy of `m` by `amount` using `center` as the pivot point.
 #[inline(always)]
-pub fn append_rotation_wrt_point<LV: Neg<LV>,
+pub fn append_rotation_wrt_point<LV: Neg<Output = LV> + Copy,
                                  AV,
                                  M: RotationWithTranslation<LV, AV>>(
                                  m:      &M,
                                  amount: &AV,
                                  center: &LV) -> M {
-    RotationWithTranslation::append_rotation_wrt_point_cpy(m, amount, center)
+    RotationWithTranslation::append_rotation_wrt_point(m, amount, center)
 }
 
 /// Rotates a copy of `m` by `amount` using `m.translation()` as the pivot point.
 #[inline(always)]
-pub fn append_rotation_wrt_center<LV: Neg<LV>,
+pub fn append_rotation_wrt_center<LV: Neg<Output = LV> + Copy,
                                   AV,
                                   M: RotationWithTranslation<LV, AV>>(
                                   m:      &M,
                                   amount: &AV) -> M {
-    RotationWithTranslation::append_rotation_wrt_center_cpy(m, amount)
+    RotationWithTranslation::append_rotation_wrt_center(m, amount)
+}
+
+/*
+ * RotationTo
+ */
+/// Computes the angle of the rotation needed to transfom `a` to `b`.
+#[inline(always)]
+pub fn angle_between<V: RotationTo>(a: &V, b: &V) -> V::AngleType {
+    a.angle_to(b)
+}
+
+/// Computes the rotation needed to transform `a` to `b`.
+#[inline(always)]
+pub fn rotation_between<V: RotationTo>(a: &V, b: &V) -> V::DeltaRotationType {
+    a.rotation_to(b)
 }
 
 /*
@@ -646,7 +580,12 @@ pub fn append_rotation_wrt_center<LV: Neg<LV>,
 
 /// Builds a rotation matrix from `r`.
 #[inline(always)]
-pub fn to_rot_mat<N, LV, AV, M: Mat<N, LV, LV> + Rotation<AV>, R: RotationMatrix<N, LV, AV, M>>(r: &R) -> M {
+pub fn to_rot_mat<N, LV, AV, R, M>(r: &R) -> M
+    where R: RotationMatrix<N, LV, AV, Output = M>,
+          M: SquareMat<N, LV> + Rotation<AV> + Copy,
+          LV: Mul<M, Output = LV>
+{
+    // FIXME: rust-lang/rust#20413
     r.to_rot_mat()
 }
 
@@ -679,7 +618,7 @@ pub fn inv_transformation<T, M: Transformation<T>>(m: &M) -> T {
 /// Gets a transformed copy of `m`.
 #[inline(always)]
 pub fn append_transformation<T, M: Transformation<T>>(m: &M, t: &T) -> M {
-    Transformation::append_transformation_cpy(m, t)
+    Transformation::append_transformation(m, t)
 }
 
 /*
@@ -727,7 +666,7 @@ pub fn sqnorm<V: Norm<N>, N: BaseFloat>(v: &V) -> N {
 /// Gets the normalized version of a vector.
 #[inline(always)]
 pub fn normalize<V: Norm<N>, N: BaseFloat>(v: &V) -> V {
-    Norm::normalize_cpy(v)
+    Norm::normalize(v)
 }
 
 /*
@@ -745,7 +684,7 @@ pub fn det<M: Det<N>, N>(m: &M) -> N {
 
 /// Computes the cross product of two vectors.
 #[inline(always)]
-pub fn cross<LV: Cross<AV>, AV>(a: &LV, b: &LV) -> AV {
+pub fn cross<LV: Cross>(a: &LV, b: &LV) -> LV::CrossProductType {
     Cross::cross(a, b)
 }
 
@@ -790,7 +729,7 @@ pub fn from_homogeneous<M, Res: FromHomogeneous<M>>(m: &M) -> Res {
 ///
 /// The number of sampling point is implementation-specific. It is always uniform.
 #[inline(always)]
-pub fn sample_sphere<V: UniformSphereSample>(f: |V| -> ()) {
+pub fn sample_sphere<V: UniformSphereSample, F: FnMut(V)>(f: F) {
     UniformSphereSample::sample(f)
 }
 
@@ -833,7 +772,7 @@ pub fn abs<M: Absolute<Res>, Res>(m: &M) -> Res {
 /// Gets an inverted copy of a matrix.
 #[inline(always)]
 pub fn inv<M: Inv>(m: &M) -> Option<M> {
-    Inv::inv_cpy(m)
+    Inv::inv(m)
 }
 
 /*
@@ -843,7 +782,7 @@ pub fn inv<M: Inv>(m: &M) -> Option<M> {
 /// Gets a transposed copy of a matrix.
 #[inline(always)]
 pub fn transpose<M: Transpose>(m: &M) -> M {
-    Transpose::transpose_cpy(m)
+    Transpose::transpose(m)
 }
 
 /*
@@ -852,7 +791,7 @@ pub fn transpose<M: Transpose>(m: &M) -> M {
 
 /// Computes the outer product of two vectors.
 #[inline(always)]
-pub fn outer<V: Outer<M>, M>(a: &V, b: &V) -> M {
+pub fn outer<V: Outer>(a: &V, b: &V) -> V::OuterProductType {
     Outer::outer(a, b)
 }
 
@@ -881,7 +820,9 @@ pub fn mean<N, M: Mean<N>>(observations: &M) -> N {
  */
 /// Computes the eigenvalues and eigenvectors of a square matrix usin the QR algorithm.
 #[inline(always)]
-pub fn eigen_qr<N, V, M: EigenQR<N, V>>(m: &M, eps: &N, niter: uint) -> (M, V) {
+pub fn eigen_qr<N, V, M>(m: &M, eps: &N, niter: usize) -> (M, V)
+    where V: Mul<M, Output = V>,
+          M: EigenQR<N, V> {
     EigenQR::eigen_qr(m, eps, niter)
 }
 
@@ -896,8 +837,20 @@ pub fn eigen_qr<N, V, M: EigenQR<N, V>>(m: &M, eps: &N, niter: uint) -> (M, V) {
  */
 /// Construct the identity matrix for a given dimension
 #[inline(always)]
-pub fn new_identity<M: Eye>(dim: uint) -> M {
+pub fn new_identity<M: Eye>(dim: usize) -> M {
     Eye::new_identity(dim)
+}
+
+
+/*
+ * Repeat
+ */
+/// Create an object by repeating a value.
+///
+/// Same as `Identity::new()`.
+#[inline(always)]
+pub fn repeat<N, T: Repeat<N>>(val: N) -> T {
+    Repeat::repeat(val)
 }
 
 /*
@@ -906,19 +859,19 @@ pub fn new_identity<M: Eye>(dim: uint) -> M {
 
 /// Computes the canonical basis for a given dimension.
 #[inline(always)]
-pub fn canonical_basis<V: Basis>(f: |V| -> bool) {
+pub fn canonical_basis<V: Basis, F: FnMut(V) -> bool>(f: F) {
     Basis::canonical_basis(f)
 }
 
 /// Computes the basis of the orthonormal subspace of a given vector.
 #[inline(always)]
-pub fn orthonormal_subspace_basis<V: Basis>(v: &V, f: |V| -> bool) {
+pub fn orthonormal_subspace_basis<V: Basis, F: FnMut(V) -> bool>(v: &V, f: F) {
     Basis::orthonormal_subspace_basis(v, f)
 }
 
 /// Gets the (0-based) i-th element of the canonical basis of V.
 #[inline]
-pub fn canonical_basis_element<V: Basis>(i: uint) -> Option<V> {
+pub fn canonical_basis_element<V: Basis>(i: usize) -> Option<V> {
     Basis::canonical_basis_element(i)
 }
 
@@ -946,13 +899,13 @@ pub fn diag<M: Diag<V>, V>(m: &M) -> V {
 ///
 /// Same as `Dim::dim::(None::<V>)`.
 #[inline(always)]
-pub fn dim<V: Dim>() -> uint {
+pub fn dim<V: Dim>() -> usize {
     Dim::dim(None::<V>)
 }
 
 /// Gets the indexable range of an object.
 #[inline(always)]
-pub fn shape<V: Shape<I, N>, I, N>(v: &V) -> I {
+pub fn shape<V: Shape<I>, I>(v: &V) -> I {
     v.shape()
 }
 
